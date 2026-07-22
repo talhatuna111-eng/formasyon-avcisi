@@ -1,0 +1,916 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Formasyon Avcısı — Grafiği at, AI çizsin</title>
+<meta name="description" content="Grafik ekran görüntüsünü yükle, yapay zeka formasyonu bulsun, üzerine çizsin ve işlem planını çıkarsın.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎯</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&family=JetBrains+Mono:wght@500;700&family=Sora:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --kagit:#FAFAF7;
+  --kagit-koyu:#F1F1EC;
+  --murekkep:#1C2230;
+  --murekkep-soluk:#5A6072;
+  --grid:#E7E9EE;
+  --marker:#8B2FC9;
+  --marker-acik:#F3E8FC;
+  --long:#0E9F6E;
+  --long-acik:#E3F5EE;
+  --short:#E02424;
+  --short-acik:#FCE8E8;
+  --bekle:#8A6D1D;
+  --bekle-acik:#FBF3DA;
+  --mavi:#2563EB;
+  --sari:#FFD666;
+  --beyaz:#FFFFFF;
+  --golge:0 2px 6px rgba(28,34,48,.07), 0 12px 32px rgba(28,34,48,.09);
+  --radius:14px;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html{scroll-behavior:smooth}
+body{
+  font-family:'Sora',system-ui,-apple-system,sans-serif;
+  color:var(--murekkep);
+  background:
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px),
+    var(--kagit);
+  background-size:28px 28px, 28px 28px, auto;
+  min-height:100vh;
+  padding-bottom:env(safe-area-inset-bottom);
+}
+.saran{max-width:760px;margin:0 auto;padding:0 16px 60px}
+
+/* ---------- Üst bar ---------- */
+header{
+  padding:22px 0 6px;
+  display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;
+}
+.marka{
+  font-family:'Caveat',cursive;
+  font-weight:700;font-size:clamp(34px,8vw,46px);
+  line-height:1;color:var(--murekkep);
+  position:relative;display:inline-block;
+}
+.marka .vurgu{color:var(--marker)}
+.marka::after{
+  content:"";position:absolute;left:2px;right:-6px;bottom:-3px;height:5px;
+  background:var(--marker);border-radius:3px;opacity:.85;
+  transform:rotate(-.6deg);
+}
+.slogan{
+  font-family:'Caveat',cursive;font-weight:500;
+  font-size:clamp(18px,4.5vw,22px);color:var(--murekkep-soluk);
+  transform:rotate(-1deg);
+}
+
+/* ---------- Yükleme alanı ---------- */
+.birak{
+  margin-top:18px;
+  border:2.5px dashed #C9CDD8;
+  border-radius:var(--radius);
+  background:rgba(255,255,255,.55);
+  padding:40px 20px 34px;
+  text-align:center;
+  cursor:pointer;
+  transition:border-color .2s, background .2s, transform .15s;
+  position:relative;
+}
+.birak:hover,.birak:focus-visible{border-color:var(--marker);background:var(--beyaz)}
+.birak:focus-visible{outline:3px solid var(--marker);outline-offset:3px}
+.birak.uzerinde{border-color:var(--marker);background:var(--marker-acik);transform:scale(1.01)}
+.birak-el{
+  font-family:'Caveat',cursive;font-weight:700;
+  font-size:clamp(24px,6vw,30px);color:var(--murekkep);
+}
+.birak-alt{margin-top:6px;font-size:13.5px;color:var(--murekkep-soluk);line-height:1.5}
+.birak-ikon{font-size:34px;display:block;margin-bottom:8px}
+.buton-satir{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:18px}
+.btn{
+  font-family:'Sora',sans-serif;font-weight:600;font-size:14.5px;
+  border:none;border-radius:11px;padding:13px 20px;cursor:pointer;
+  transition:transform .12s, box-shadow .12s, opacity .2s;
+  display:inline-flex;align-items:center;gap:7px;
+}
+.btn:active{transform:scale(.96)}
+.btn:focus-visible{outline:3px solid var(--marker);outline-offset:2px}
+.btn:disabled{opacity:.45;cursor:not-allowed;transform:none}
+.btn-ana{background:var(--murekkep);color:var(--beyaz);box-shadow:var(--golge)}
+.btn-ana:hover:not(:disabled){transform:translateY(-1px)}
+.btn-cizgi{background:var(--beyaz);color:var(--murekkep);border:1.5px solid #D6D9E0}
+.btn-cizgi:hover:not(:disabled){border-color:var(--murekkep)}
+.btn-mor{background:var(--marker);color:#fff;box-shadow:var(--golge)}
+.gizli{display:none !important}
+
+/* ---------- Sahne ---------- */
+.sahne{margin-top:18px}
+.tuval-kutu{
+  background:var(--beyaz);
+  border-radius:var(--radius);
+  box-shadow:var(--golge);
+  padding:10px;
+  position:relative;
+}
+canvas#stage{display:block;width:100%;height:auto;border-radius:9px}
+.arac-cubugu{
+  display:flex;gap:10px;margin-top:14px;flex-wrap:wrap;
+}
+.arac-cubugu .btn{flex:1;min-width:130px;justify-content:center}
+
+/* ---------- Durum ---------- */
+.durum{
+  margin-top:14px;
+  background:var(--beyaz);
+  border-radius:12px;
+  box-shadow:var(--golge);
+  padding:14px 16px;
+  display:flex;align-items:center;gap:12px;
+  font-size:14px;
+}
+.spinner{
+  width:20px;height:20px;flex:none;
+  border:3px solid var(--marker-acik);
+  border-top-color:var(--marker);
+  border-radius:50%;
+  animation:donme .8s linear infinite;
+}
+@keyframes donme{to{transform:rotate(360deg)}}
+.durum-metin{font-weight:600}
+.durum-alt{font-size:11.5px;color:var(--murekkep-soluk);margin-top:2px;white-space:pre-line;font-family:'JetBrains Mono',monospace;line-height:1.6}
+.hata{border-left:4px solid var(--short)}
+.hata .durum-metin{color:var(--short)}
+
+/* ---------- Analist notu (sonuç kartı) ---------- */
+.not-karti{
+  margin-top:20px;
+  background:var(--beyaz);
+  border-radius:var(--radius);
+  box-shadow:var(--golge);
+  padding:22px 18px 20px;
+  position:relative;
+  animation:yukari .45s cubic-bezier(.2,.9,.3,1.1);
+}
+@keyframes yukari{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
+.not-baslik{
+  font-family:'Caveat',cursive;font-weight:700;font-size:26px;
+  color:var(--murekkep-soluk);
+  position:absolute;top:-14px;left:18px;
+  background:var(--kagit);padding:0 10px;border-radius:8px;
+  transform:rotate(-1.5deg);
+}
+.kart-ust{display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap;margin-top:4px}
+.yon-etiket{
+  font-family:'Caveat',cursive;font-weight:700;font-size:26px;line-height:1;
+  padding:10px 16px 12px;border-radius:4px 14px 6px 12px;
+  transform:rotate(-2deg);
+  box-shadow:0 3px 8px rgba(28,34,48,.18);
+  flex:none;
+}
+.yon-LONG{background:var(--long);color:#fff}
+.yon-SHORT{background:var(--short);color:#fff}
+.yon-BEKLE{background:var(--sari);color:var(--murekkep)}
+.kart-bilgi{flex:1;min-width:180px}
+.formasyon-adi{font-weight:700;font-size:19px;line-height:1.25}
+.cipler{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}
+.cip{
+  font-size:11.5px;font-weight:600;color:var(--murekkep-soluk);
+  background:var(--kagit-koyu);border-radius:20px;padding:4px 11px;
+}
+.guven-kutu{margin-top:16px}
+.guven-ust{display:flex;justify-content:space-between;font-size:12.5px;font-weight:600;color:var(--murekkep-soluk);margin-bottom:6px}
+.guven-ray{height:10px;background:var(--kagit-koyu);border-radius:6px;overflow:hidden}
+.guven-cubuk{
+  height:100%;width:0;border-radius:6px;
+  background:linear-gradient(90deg,var(--marker),#B565E8);
+  transition:width 1s cubic-bezier(.2,.8,.3,1);
+}
+.seviyeler{
+  display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:18px;
+}
+.seviye{
+  border-radius:11px;padding:12px 10px;text-align:center;
+  border:1.5px solid transparent;
+}
+.seviye .s-ad{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+.seviye .s-deger{font-family:'JetBrains Mono',monospace;font-weight:700;font-size:15.5px;margin-top:5px;word-break:break-all}
+.s-giris{background:#EAF0FE;border-color:#C6D6FB}.s-giris .s-ad{color:var(--mavi)}
+.s-stop{background:var(--short-acik);border-color:#F6C9C9}.s-stop .s-ad{color:var(--short)}
+.s-hedef{background:var(--long-acik);border-color:#BEE8D7}.s-hedef .s-ad{color:var(--long)}
+.analiz-metin{
+  margin-top:18px;font-size:14.5px;line-height:1.65;color:#2A3040;
+}
+.aksiyon{
+  margin-top:16px;
+  background:var(--sari);
+  border-radius:4px 14px 5px 12px;
+  padding:14px 16px 15px;
+  transform:rotate(-.7deg);
+  box-shadow:0 4px 10px rgba(28,34,48,.15);
+}
+.aksiyon .a-baslik{
+  font-family:'Caveat',cursive;font-weight:700;font-size:22px;line-height:1;margin-bottom:5px;
+}
+.aksiyon .a-metin{font-size:14px;font-weight:600;line-height:1.55}
+.saglayici{
+  margin-top:14px;font-size:11.5px;color:var(--murekkep-soluk);
+  display:flex;align-items:center;gap:6px;
+}
+.saglayici .nokta{width:7px;height:7px;border-radius:50%;background:var(--long);flex:none}
+
+/* ---------- Alt bilgi ---------- */
+footer{
+  margin-top:34px;text-align:center;
+  font-size:12px;color:var(--murekkep-soluk);line-height:1.7;
+}
+footer .uyari{
+  display:inline-block;background:var(--kagit-koyu);
+  border-radius:20px;padding:6px 14px;font-weight:600;margin-bottom:8px;
+}
+@media (prefers-reduced-motion: reduce){
+  *{animation:none !important;transition:none !important;scroll-behavior:auto}
+}
+@media (max-width:420px){
+  .seviyeler{gap:6px}
+  .seviye{padding:10px 6px}
+  .seviye .s-deger{font-size:13.5px}
+}
+</style>
+</head>
+<body>
+<div class="saran">
+
+  <header>
+    <h1 class="marka">Formasyon <span class="vurgu">Avcısı</span></h1>
+    <span class="slogan">grafiği at, gerisini AI çizsin ✍️</span>
+  </header>
+
+  <!-- Yükleme alanı -->
+  <div class="birak" id="birakAlani" role="button" tabindex="0" aria-label="Grafik ekran görüntüsü yükle">
+    <span class="birak-ikon">📈</span>
+    <div class="birak-el">Grafiği buraya bırak</div>
+    <div class="birak-alt">TradingView, Matriks, Midas... hangi platformdan olursa olsun<br>ekran görüntüsünü seç veya yapıştır</div>
+    <div class="buton-satir">
+      <button class="btn btn-ana" id="btnSec" type="button">📂 Ekran görüntüsü seç</button>
+      <button class="btn btn-cizgi" id="btnDemo" type="button">🎲 Örnek grafikle dene</button>
+    </div>
+    <input type="file" id="dosyaGiris" accept="image/*" class="gizli">
+  </div>
+
+  <!-- Sahne -->
+  <div class="sahne gizli" id="sahne">
+    <div class="tuval-kutu">
+      <canvas id="stage"></canvas>
+    </div>
+    <div class="arac-cubugu">
+      <button class="btn btn-mor" id="btnAnaliz" type="button">🔍 Analiz et</button>
+      <button class="btn btn-cizgi" id="btnIndir" type="button" disabled>⬇️ PNG indir</button>
+      <button class="btn btn-cizgi" id="btnYeni" type="button">↺ Yeni grafik</button>
+    </div>
+  </div>
+
+  <!-- Durum -->
+  <div class="durum gizli" id="durum">
+    <div class="spinner" id="spin"></div>
+    <div>
+      <div class="durum-metin" id="durumMetin">Grafik okunuyor...</div>
+      <div class="durum-alt" id="durumAlt"></div>
+    </div>
+  </div>
+
+  <!-- Sonuç kartı -->
+  <div class="not-karti gizli" id="notKarti">
+    <div class="not-baslik">Analistin Notu</div>
+    <div class="kart-ust">
+      <div class="yon-etiket" id="yonEtiket">LONG ↗</div>
+      <div class="kart-bilgi">
+        <div class="formasyon-adi" id="formasyonAdi">—</div>
+        <div class="cipler" id="cipler"></div>
+      </div>
+    </div>
+    <div class="guven-kutu">
+      <div class="guven-ust"><span>Güven skoru</span><span id="guvenYazi">—</span></div>
+      <div class="guven-ray"><div class="guven-cubuk" id="guvenCubuk"></div></div>
+    </div>
+    <div class="seviyeler">
+      <div class="seviye s-giris"><div class="s-ad">Giriş</div><div class="s-deger" id="svGiris">—</div></div>
+      <div class="seviye s-stop"><div class="s-ad">Stop</div><div class="s-deger" id="svStop">—</div></div>
+      <div class="seviye s-hedef"><div class="s-ad">Hedef</div><div class="s-deger" id="svHedef">—</div></div>
+    </div>
+    <p class="analiz-metin" id="analizMetin"></p>
+    <div class="aksiyon">
+      <div class="a-baslik">Ne yapmalıyım? 👇</div>
+      <div class="a-metin" id="aksiyonMetin"></div>
+    </div>
+    <div class="saglayici"><span class="nokta"></span><span id="saglayiciMetin"></span></div>
+  </div>
+
+  <footer>
+    <span class="uyari">⚠️ Eğitim amaçlıdır, yatırım tavsiyesi değildir</span><br>
+    AI çizimleri yaklaşık konumlardır · Tamamen istemci taraflı çalışır, grafiğin sunucuya kaydedilmez
+  </footer>
+
+</div>
+
+<script src="https://js.puter.com/v2/" onerror="window.__puterYok=1"></script>
+<script>
+"use strict";
+
+/* ================= DURUM ================= */
+const S = {
+  img: null,        // görüntülenen Image
+  kaynak: null,     // tam çözünürlüklü kaynak canvas
+  dataUrl: null,    // AI'ya giden sıkıştırılmış jpeg
+  W: 0, H: 0,       // tuval çözünürlüğü
+  sonuc: null,
+  mesgul: false,
+  cizildi: []       // tamamlanan şekiller (yeniden çizim için)
+};
+
+const $ = id => document.getElementById(id);
+const stage = $("stage"), ctx = stage.getContext("2d");
+const azHareket = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+const RENKLER = {
+  kirmizi:"#E02424", yesil:"#0E9F6E", mavi:"#2563EB",
+  mor:"#8B2FC9", turuncu:"#F59E0B", turkuaz:"#0EA5E9"
+};
+
+/* ================= YÜKLEME ================= */
+const birak = $("birakAlani"), dosyaGiris = $("dosyaGiris");
+
+$("btnSec").addEventListener("click", e => { e.stopPropagation(); dosyaGiris.click(); });
+birak.addEventListener("click", () => dosyaGiris.click());
+birak.addEventListener("keydown", e => { if(e.key==="Enter"||e.key===" "){ e.preventDefault(); dosyaGiris.click(); } });
+dosyaGiris.addEventListener("change", () => { if(dosyaGiris.files[0]) dosyaAl(dosyaGiris.files[0]); });
+
+["dragover","dragenter"].forEach(ev => birak.addEventListener(ev, e => { e.preventDefault(); birak.classList.add("uzerinde"); }));
+["dragleave","drop"].forEach(ev => birak.addEventListener(ev, e => { e.preventDefault(); birak.classList.remove("uzerinde"); }));
+birak.addEventListener("drop", e => {
+  const f = e.dataTransfer.files && e.dataTransfer.files[0];
+  if(f && f.type.startsWith("image/")) dosyaAl(f);
+});
+window.addEventListener("paste", e => {
+  const item = [...(e.clipboardData?.items||[])].find(i => i.type.startsWith("image/"));
+  if(item) dosyaAl(item.getAsFile());
+});
+
+function dosyaAl(file){
+  const okuyucu = new FileReader();
+  okuyucu.onload = () => resimKur(okuyucu.result);
+  okuyucu.onerror = () => hataGoster("Dosya okunamadı. Farklı bir görsel dene.");
+  okuyucu.readAsDataURL(file);
+}
+
+function resimKur(kaynakUrl){
+  const img = new Image();
+  img.onload = () => {
+    // Görüntüleme kopyası: uzun kenar maks 1600px (net tuval + net PNG çıktı)
+    const uzunKenar = Math.max(img.naturalWidth, img.naturalHeight);
+    const gOlcek = Math.min(1, 1600 / uzunKenar);
+    S.W = Math.round(img.naturalWidth * gOlcek);
+    S.H = Math.round(img.naturalHeight * gOlcek);
+    const c = document.createElement("canvas");
+    c.width = S.W; c.height = S.H;
+    c.getContext("2d").drawImage(img, 0, 0, S.W, S.H);
+    S.kaynak = c;
+    // AI kopyası: uzun kenar maks 1000px — istek gövdesini küçük tutar
+    S.dataUrl = aiGorsel(1000, 0.8);
+
+    const son = new Image();
+    son.onload = () => {
+      S.img = son;
+      stage.width = S.W; stage.height = S.H;
+      S.sonuc = null; S.cizildi = [];
+      tabanCiz();
+      $("sahne").classList.remove("gizli");
+      birak.classList.add("gizli");
+      $("notKarti").classList.add("gizli");
+      $("durum").classList.add("gizli");
+      $("btnIndir").disabled = true;
+      $("btnAnaliz").disabled = false;
+      $("sahne").scrollIntoView({behavior: azHareket ? "auto" : "smooth", block:"start"});
+    };
+    son.src = c.toDataURL("image/jpeg", 0.9);
+  };
+  img.onerror = () => hataGoster("Görsel açılamadı. PNG veya JPG dene.");
+  img.src = kaynakUrl;
+}
+
+// Kaynak canvas'tan istenen uzun kenar + kalitede jpeg üretir
+function aiGorsel(maxUzun, kalite){
+  const k = S.kaynak;
+  const uzun = Math.max(k.width, k.height);
+  const o = Math.min(1, maxUzun / uzun);
+  const c = document.createElement("canvas");
+  c.width = Math.max(1, Math.round(k.width * o));
+  c.height = Math.max(1, Math.round(k.height * o));
+  c.getContext("2d").drawImage(k, 0, 0, c.width, c.height);
+  return c.toDataURL("image/jpeg", kalite);
+}
+
+$("btnYeni").addEventListener("click", () => {
+  S.img = null; S.kaynak = null; S.sonuc = null; S.cizildi = [];
+  dosyaGiris.value = "";
+  $("sahne").classList.add("gizli");
+  $("notKarti").classList.add("gizli");
+  $("durum").classList.add("gizli");
+  birak.classList.remove("gizli");
+  window.scrollTo({top:0, behavior: azHareket ? "auto" : "smooth"});
+});
+
+$("btnIndir").addEventListener("click", () => {
+  const a = document.createElement("a");
+  a.download = "formasyon-avcisi-analiz.png";
+  a.href = stage.toDataURL("image/png");
+  a.click();
+});
+
+/* ================= ÖRNEK GRAFİK ================= */
+$("btnDemo").addEventListener("click", e => {
+  e.stopPropagation();
+  resimKur(demoGrafik());
+});
+
+function demoGrafik(){
+  const w = 1000, h = 640;
+  const c = document.createElement("canvas");
+  c.width = w; c.height = h;
+  const g = c.getContext("2d");
+  g.fillStyle = "#FFFFFF"; g.fillRect(0,0,w,h);
+  // ızgara
+  g.strokeStyle = "#EEF0F4"; g.lineWidth = 1;
+  for(let x=0; x<w; x+=62){ g.beginPath(); g.moveTo(x,0); g.lineTo(x,h); g.stroke(); }
+  for(let y=0; y<h; y+=58){ g.beginPath(); g.moveTo(0,y); g.lineTo(w,y); g.stroke(); }
+
+  // Alçalan üçgen: tepe noktaları düşüyor, destek yatay
+  const N = 46, solPad = 30, sagPad = 90, altPad = 50;
+  const alan = w - solPad - sagPad;
+  const destekY = h * 0.66;
+  let onceki = h * 0.30;
+  for(let i=0; i<N; i++){
+    const x = solPad + (i + 0.5) * (alan / N);
+    const t = i / N;
+    const tavan = h*0.18 + t * (destekY - h*0.20);          // alçalan direnç
+    const salinim = Math.sin(i * 1.05) * (1 - t*0.55);       // sıkışan dalga
+    let merkez = tavan + (destekY - tavan) * (0.5 - salinim * 0.5);
+    merkez = Math.min(destekY - 6, Math.max(tavan + 6, merkez));
+    const govde = 10 + Math.random()*16 * (1 - t*0.4);
+    const acik = onceki;
+    const kapali = merkez + (Math.random()-0.5) * govde;
+    const yuksek = Math.min(acik, kapali) - (4 + Math.random()*10);
+    const dusuk  = Math.max(acik, kapali) + (4 + Math.random()*10);
+    const yesilMi = kapali < acik; // y küçük = fiyat yüksek
+    g.strokeStyle = g.fillStyle = yesilMi ? "#26A69A" : "#EF5350";
+    g.lineWidth = 2;
+    g.beginPath(); g.moveTo(x, yuksek); g.lineTo(x, dusuk); g.stroke();
+    const gU = Math.min(acik, kapali), gA = Math.abs(kapali - acik) || 3;
+    g.fillRect(x - 6, gU, 12, gA);
+    onceki = kapali;
+  }
+  // sağ fiyat ekseni
+  g.fillStyle = "#8A90A0"; g.font = "600 15px Arial";
+  const fMax = 128.4, fMin = 96.2;
+  for(let i=0; i<=6; i++){
+    const y = 30 + i * ((h - altPad - 30) / 6);
+    const fiyat = (fMax - (fMax - fMin) * (i/6)).toFixed(1);
+    g.fillText(fiyat, w - sagPad + 14, y + 5);
+    g.strokeStyle = "#F2F3F6"; g.beginPath(); g.moveTo(solPad, y); g.lineTo(w - sagPad, y); g.stroke();
+  }
+  // alt zaman ekseni
+  const saatler = ["09:30","11:00","12:30","14:00","15:30","17:00"];
+  saatler.forEach((s,i) => g.fillText(s, solPad + 40 + i * (alan/6), h - 18));
+  return c.toDataURL("image/jpeg", 0.9);
+}
+
+/* ================= AI İSTEK ================= */
+function promptUret(){
+  return `Sen deneyimli bir teknik analiz uzmanısın. Sana bir fiyat grafiği ekran görüntüsü veriyorum. Grafikteki formasyonu tespit et, çizim talimatları üret ve işlem planı çıkar.
+
+SADECE geçerli JSON döndür. Markdown yok, kod bloğu yok, açıklama yok. İlk karakter { son karakter } olmalı.
+
+Şema:
+{
+ "varlik": "grafikte okunuyorsa enstrüman adı, okunmuyorsa null",
+ "zaman_dilimi": "okunuyorsa (örn 1S, 4S, 1G), okunmuyorsa null",
+ "trend": "yükseliş|düşüş|yatay",
+ "formasyon": "formasyonun Türkçe adı (örn: Alçalan Üçgen, Boğa Bayrağı, İkili Dip, OBO, Direnç Kırılımı, Sıkışma)",
+ "yon": "LONG|SHORT|BEKLE",
+ "guven": 0-100 arası tam sayı,
+ "cizimler": [
+   {"tip":"cizgi","etiket":"Direnç","renk":"mor","stil":"duz","x1":8,"y1":22,"x2":68,"y2":41},
+   {"tip":"yatay","etiket":"Destek","renk":"yesil","stil":"duz","y":63,"x1":6,"x2":80},
+   {"tip":"bolge","etiket":"Giriş bölgesi","renk":"mavi","x1":62,"y1":52,"x2":82,"y2":58},
+   {"tip":"bolge","etiket":"Stop","renk":"kirmizi","x1":62,"y1":66,"x2":82,"y2":72},
+   {"tip":"ok","etiket":"Hedef","renk":"turkuaz","stil":"kesikli","x1":76,"y1":55,"x2":90,"y2":24}
+ ],
+ "seviyeler": {"giris":"eksenden okunabiliyorsa sayı, yoksa null","stop":"...","hedef":"..."},
+ "analiz": "En fazla 2 cümle Türkçe teknik yorum",
+ "aksiyon": "Kullanıcıya tek cümlelik net talimat (örn: Direnç üstü saatlik kapanışta long gir, stop destek altı)"
+}
+
+Kurallar:
+- KISA TUT: toplam yanıt 700 token'ı geçmesin. Analiz en fazla 2 cümle, aksiyon tek cümle.
+- Koordinatlar görüntünün YÜZDESİDİR (0-100). x=0 sol kenar, y=0 üst kenar. y küçüldükçe fiyat YÜKSELİR.
+- Çizimleri yalnızca mum/fiyat alanına yerleştir; eksen yazılarının üzerine taşırma.
+- En az 2, en fazla 5 çizim. Yapı çizgileri önce, giriş-stop bölgeleri sonra, hedef oku en son.
+- renk yalnızca: kirmizi, yesil, mavi, mor, turuncu, turkuaz. stil: duz veya kesikli (projeksiyonlar kesikli).
+- Formasyon belirsizse yon="BEKLE" yap ve analizde nedenini söyle. Tüm metinler Türkçe olsun.`;
+}
+
+function zamanAsimi(promise, ms){
+  return Promise.race([
+    promise,
+    new Promise((_, red) => setTimeout(() => red(new Error("zaman aşımı")), ms))
+  ]);
+}
+
+function puterMetin(r){
+  if(!r) return "";
+  if(typeof r === "string") return r;
+  const m = r.message || r;
+  const c = m && m.content;
+  if(typeof c === "string") return c;
+  if(Array.isArray(c)) return c.map(b => (b && b.text) || "").join("");
+  return "";
+}
+
+async function sorPuter(prompt, dataUrl){
+  if(window.__puterYok || !window.puter || !puter.ai) throw new Error("Puter yüklenemedi");
+  const r = await zamanAsimi(puter.ai.chat(prompt, dataUrl), 60000);
+  return puterMetin(r);
+}
+
+async function sorAnthropic(prompt, dataUrl){
+  const virgul = dataUrl.indexOf(",");
+  const meta = dataUrl.slice(0, virgul);
+  const b64 = dataUrl.slice(virgul + 1);
+  const mtEs = meta.match(/data:(.*?);/);
+  const mt = mtEs ? mtEs[1] : "image/jpeg";
+  const resp = await zamanAsimi(fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({
+      model: "claude-sonnet-4-6",
+      max_tokens: 1000,
+      messages: [{role:"user", content:[
+        {type:"image", source:{type:"base64", media_type:mt, data:b64}},
+        {type:"text", text:prompt}
+      ]}]
+    })
+  }), 75000);
+  if(!resp.ok){
+    let detay = "";
+    try { detay = (await resp.text()).slice(0, 120); } catch(e){}
+    throw new Error("HTTP " + resp.status + (detay ? " · " + detay : ""));
+  }
+  const d = await resp.json();
+  const metin = (d.content || []).map(b => b.type === "text" ? b.text : "").filter(Boolean).join("\n");
+  if(!metin) throw new Error("boş yanıt");
+  return metin;
+}
+
+// Geçici proxy hatası / büyük istek ihtimaline karşı: küçültüp bir kez daha dene
+async function sorAnthropicDayanikli(prompt){
+  try {
+    return await sorAnthropic(prompt, S.dataUrl);
+  } catch(e){
+    const m = String((e && e.message) || "");
+    // Ağ/CORS hatasıysa (GitHub Pages'te normaldir) tekrar deneme, hızlı geç
+    if(/fetch|load failed|network/i.test(m)) throw e;
+    console.warn("Anthropic 1. deneme:", e);
+    await new Promise(r => setTimeout(r, 600));
+    return await sorAnthropic(prompt, aiGorsel(760, 0.72));
+  }
+}
+
+async function sorPollinations(prompt, dataUrl){
+  const resp = await zamanAsimi(fetch("https://text.pollinations.ai/openai", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({
+      model: "openai",
+      messages: [{role:"user", content:[
+        {type:"text", text:prompt},
+        {type:"image_url", image_url:{url:dataUrl}}
+      ]}],
+      max_tokens: 1200
+    })
+  }), 75000);
+  if(!resp.ok) throw new Error("Pollinations " + resp.status);
+  const d = await resp.json();
+  return (d && d.choices && d.choices[0] && d.choices[0].message && d.choices[0].message.content) || "";
+}
+
+function jsonAyikla(metin){
+  if(!metin) return null;
+  const temiz = metin.replace(/```json/gi, "").replace(/```/g, "").trim();
+  const a = temiz.indexOf("{");
+  if(a < 0) return null;
+  const govde = temiz.slice(a);
+  const b = govde.lastIndexOf("}");
+  if(b > 0){
+    try { return JSON.parse(govde.slice(0, b + 1)); } catch(e){ /* onarmayı dene */ }
+  }
+  return jsonOnar(govde);
+}
+
+// max_tokens kesintisi vb. ile yarım kalan JSON'u dengeleyip kurtarmayı dener
+function jsonOnar(s){
+  let sonuc = "", yigin = [], strIcinde = false, kacis = false;
+  for(const ch of s){
+    if(strIcinde){
+      sonuc += ch;
+      if(kacis) kacis = false;
+      else if(ch === "\\") kacis = true;
+      else if(ch === '"') strIcinde = false;
+      continue;
+    }
+    if(ch === '"'){ strIcinde = true; sonuc += ch; continue; }
+    if(ch === "{" || ch === "[") yigin.push(ch);
+    else if(ch === "}" || ch === "]") yigin.pop();
+    sonuc += ch;
+  }
+  if(strIcinde) sonuc += '"';
+  // sona sarkan anahtar/değer kırıntılarını temizle
+  sonuc = sonuc.replace(/[,{[]\s*"[^"]*"\s*:\s*$/, m => m.trimStart()[0] === "{" ? "{" : (m.trimStart()[0] === "[" ? "[" : ""));
+  sonuc = sonuc.replace(/,\s*"[^"]*"\s*$/, "");
+  sonuc = sonuc.replace(/,\s*$/, "");
+  while(yigin.length){
+    sonuc = sonuc.replace(/,\s*$/, "");
+    sonuc += (yigin.pop() === "{") ? "}" : "]";
+  }
+  try { return JSON.parse(sonuc); } catch(e){ return null; }
+}
+
+function sonucGecerli(r){
+  if(!r || typeof r !== "object") return false;
+  if(!["LONG","SHORT","BEKLE"].includes(r.yon)) return false;
+  if(!Array.isArray(r.cizimler)) r.cizimler = [];
+  r.cizimler = r.cizimler.filter(s => {
+    if(!s || typeof s !== "object") return false;
+    const sayi = v => typeof v === "number" && isFinite(v);
+    if(s.tip === "yatay") return sayi(s.y);
+    if(s.tip === "cizgi" || s.tip === "ok" || s.tip === "bolge")
+      return sayi(s.x1) && sayi(s.y1) && sayi(s.x2) && sayi(s.y2);
+    return false;
+  });
+  return true;
+}
+
+/* ================= ANALİZ AKIŞI ================= */
+const bekleMesajlari = [
+  "Grafik okunuyor...", "Mumlar taranıyor...", "Formasyon aranıyor...",
+  "Destek-direnç ölçülüyor...", "Seviyeler hesaplanıyor...", "İşlem planı yazılıyor..."
+];
+let mesajSayac = null;
+
+$("btnAnaliz").addEventListener("click", analizEt);
+
+async function analizEt(){
+  if(S.mesgul || !S.dataUrl) return;
+  S.mesgul = true;
+  S.sonuc = null; S.cizildi = [];
+  tabanCiz();
+  $("btnAnaliz").disabled = true;
+  $("btnIndir").disabled = true;
+  $("notKarti").classList.add("gizli");
+  durumGoster();
+
+  const prompt = promptUret();
+  const puterVar = !window.__puterYok && window.puter && puter.ai;
+  const saglayicilar = puterVar ? [
+    {ad:"Claude (Puter)",     fn:sorPuter},
+    {ad:"Pollinations",       fn:sorPollinations},
+    {ad:"Claude (Anthropic)", fn:sorAnthropicDayanikli}
+  ] : [
+    {ad:"Claude (Anthropic)", fn:sorAnthropicDayanikli},
+    {ad:"Claude (Puter)",     fn:sorPuter},
+    {ad:"Pollinations",       fn:sorPollinations}
+  ];
+
+  let bulunan = null, kullanilan = "";
+  const gunluk = [];
+  for(const s of saglayicilar){
+    $("durumAlt").textContent = gunluk.concat("▶ " + s.ad + " deneniyor...").join("\n");
+    try {
+      const metin = await s.fn(prompt, S.dataUrl);
+      const r = jsonAyikla(metin);
+      if(sonucGecerli(r)){ bulunan = r; kullanilan = s.ad; break; }
+      gunluk.push("✗ " + s.ad + ": yanıt çözümlenemedi");
+    } catch(e){
+      gunluk.push("✗ " + s.ad + ": " + ((e && e.message) || "hata").slice(0, 90));
+      console.warn(s.ad, e);
+    }
+  }
+
+  durumGizle();
+  S.mesgul = false;
+  $("btnAnaliz").disabled = false;
+
+  if(!bulunan){
+    hataGoster("Analiz tamamlanamadı — üç motor da yanıt veremedi.", gunluk.join("\n"));
+    return;
+  }
+
+  S.sonuc = bulunan;
+  await sekilleriCiz(bulunan.cizimler);
+  kartiDoldur(bulunan, kullanilan);
+  $("btnIndir").disabled = false;
+}
+
+function durumGoster(){
+  const d = $("durum");
+  d.classList.remove("gizli","hata");
+  $("spin").style.display = "";
+  let i = 0;
+  $("durumMetin").textContent = bekleMesajlari[0];
+  $("durumAlt").textContent = "";
+  clearInterval(mesajSayac);
+  mesajSayac = setInterval(() => {
+    i = (i + 1) % bekleMesajlari.length;
+    $("durumMetin").textContent = bekleMesajlari[i];
+  }, 2200);
+}
+function durumGizle(){
+  clearInterval(mesajSayac);
+  $("durum").classList.add("gizli");
+}
+function hataGoster(mesaj, detay){
+  clearInterval(mesajSayac);
+  const d = $("durum");
+  d.classList.remove("gizli");
+  d.classList.add("hata");
+  $("spin").style.display = "none";
+  $("durumMetin").textContent = mesaj;
+  $("durumAlt").textContent = detay || "";
+}
+
+/* ================= ÇİZİM MOTORU ================= */
+function tabanCiz(){
+  if(!S.img) return;
+  ctx.clearRect(0, 0, S.W, S.H);
+  ctx.drawImage(S.img, 0, 0, S.W, S.H);
+}
+
+function px(p, eksen){ // yüzde -> piksel
+  const deger = Number(p) || 0;
+  return (deger / 100) * (eksen === "x" ? S.W : S.H);
+}
+
+function kalinlik(){ return Math.max(3, S.H * 0.007); }
+function fontPx(){ return Math.max(18, Math.round(S.H * 0.042)); }
+
+function sekilCiz(s, t){ // t: 0..1 ilerleme
+  const renk = RENKLER[s.renk] || RENKLER.mor;
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.strokeStyle = renk;
+  ctx.fillStyle = renk;
+  ctx.lineWidth = kalinlik();
+  if(s.stil === "kesikli") ctx.setLineDash([kalinlik()*2.4, kalinlik()*1.8]);
+
+  if(s.tip === "yatay"){
+    const y = px(s.y, "y");
+    const x1 = px(s.x1 != null ? s.x1 : 2, "x");
+    const x2 = px(s.x2 != null ? s.x2 : 98, "x");
+    ctx.beginPath();
+    ctx.moveTo(x1, y);
+    ctx.lineTo(x1 + (x2 - x1) * t, y);
+    ctx.stroke();
+  }
+  else if(s.tip === "cizgi" || s.tip === "ok"){
+    const x1 = px(s.x1,"x"), y1 = px(s.y1,"y"), x2 = px(s.x2,"x"), y2 = px(s.y2,"y");
+    const ux = x1 + (x2 - x1) * t, uy = y1 + (y2 - y1) * t;
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(ux, uy);
+    ctx.stroke();
+    if(s.tip === "ok" && t > 0.9){
+      ctx.setLineDash([]);
+      const aci = Math.atan2(y2 - y1, x2 - x1);
+      const B = kalinlik() * 3.6;
+      ctx.beginPath();
+      ctx.moveTo(x2, y2);
+      ctx.lineTo(x2 - B * Math.cos(aci - 0.45), y2 - B * Math.sin(aci - 0.45));
+      ctx.lineTo(x2 - B * Math.cos(aci + 0.45), y2 - B * Math.sin(aci + 0.45));
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+  else if(s.tip === "bolge"){
+    const x1 = px(s.x1,"x"), y1 = px(s.y1,"y");
+    const gen = px(s.x2,"x") - x1, yuk = px(s.y2,"y") - y1;
+    ctx.globalAlpha = 0.16 * t;
+    ctx.fillRect(x1, y1, gen, yuk);
+    ctx.globalAlpha = Math.min(1, t);
+    ctx.setLineDash([6, 5]);
+    ctx.lineWidth = Math.max(2, kalinlik() * 0.6);
+    ctx.strokeRect(x1, y1, gen, yuk);
+  }
+  ctx.restore();
+
+  if(t >= 1 && s.etiket) etiketCiz(s, renk);
+}
+
+function etiketCiz(s, renk){
+  let ex, ey;
+  if(s.tip === "yatay"){ ex = px((Number(s.x1)||2) + 2, "x"); ey = px(s.y, "y") - 10; }
+  else if(s.tip === "bolge"){ ex = px(s.x1, "x") + 8; ey = px(s.y1, "y") - 8; }
+  else { // cizgi / ok: orta nokta üstü
+    ex = (px(s.x1,"x") + px(s.x2,"x")) / 2;
+    ey = Math.min(px(s.y1,"y"), px(s.y2,"y")) - 12;
+  }
+  ey = Math.max(fontPx(), ey);
+  ctx.save();
+  ctx.font = "700 " + fontPx() + "px Caveat, 'Comic Sans MS', cursive";
+  ctx.textBaseline = "bottom";
+  ctx.lineWidth = Math.max(4, kalinlik() * 1.1);
+  ctx.strokeStyle = "rgba(255,255,255,0.92)";
+  ctx.strokeText(s.etiket, ex, ey);
+  ctx.fillStyle = renk;
+  ctx.fillText(s.etiket, ex, ey);
+  ctx.restore();
+}
+
+function tamamCiz(){
+  tabanCiz();
+  S.cizildi.forEach(s => sekilCiz(s, 1));
+}
+
+function sekilAnimasyon(s){
+  return new Promise(res => {
+    if(azHareket){ S.cizildi.push(s); tamamCiz(); res(); return; }
+    const sure = s.tip === "bolge" ? 380 : 480;
+    const t0 = performance.now();
+    function kare(simdi){
+      const t = Math.min(1, (simdi - t0) / sure);
+      const e = 1 - Math.pow(1 - t, 3); // easeOutCubic
+      tabanCiz();
+      S.cizildi.forEach(d => sekilCiz(d, 1));
+      sekilCiz(s, e);
+      if(t < 1) requestAnimationFrame(kare);
+      else { S.cizildi.push(s); tamamCiz(); res(); }
+    }
+    requestAnimationFrame(kare);
+  });
+}
+
+async function sekilleriCiz(cizimler){
+  S.cizildi = [];
+  const liste = cizimler.slice(0, 8);
+  for(const s of liste){
+    await sekilAnimasyon(s);
+    if(!azHareket) await new Promise(r => setTimeout(r, 130)); // tak... tak...
+  }
+}
+
+/* ================= SONUÇ KARTI ================= */
+function kartiDoldur(r, saglayici){
+  const yon = r.yon;
+  const yonEl = $("yonEtiket");
+  yonEl.className = "yon-etiket yon-" + yon;
+  yonEl.textContent = yon === "LONG" ? "LONG ↗" : yon === "SHORT" ? "SHORT ↘" : "BEKLE ✋";
+
+  $("formasyonAdi").textContent = r.formasyon || "Formasyon tespit edildi";
+
+  const cipler = $("cipler");
+  cipler.innerHTML = "";
+  [r.varlik, r.zaman_dilimi, r.trend ? "Trend: " + r.trend : null]
+    .filter(Boolean)
+    .forEach(m => {
+      const c = document.createElement("span");
+      c.className = "cip"; c.textContent = m;
+      cipler.appendChild(c);
+    });
+
+  const guven = Math.max(0, Math.min(100, Number(r.guven) || 0));
+  $("guvenYazi").textContent = "%" + guven;
+  requestAnimationFrame(() => { $("guvenCubuk").style.width = guven + "%"; });
+
+  const sv = r.seviyeler || {};
+  const fmt = v => (v === null || v === undefined || v === "" || v === "null") ? "—" : String(v);
+  $("svGiris").textContent = fmt(sv.giris);
+  $("svStop").textContent  = fmt(sv.stop);
+  $("svHedef").textContent = fmt(sv.hedef);
+
+  $("analizMetin").textContent = r.analiz || "";
+  $("aksiyonMetin").textContent = r.aksiyon || "Formasyon onayı gelmeden pozisyon açma.";
+  $("saglayiciMetin").textContent = "Analiz motoru: " + saglayici;
+
+  const kart = $("notKarti");
+  kart.classList.remove("gizli");
+  kart.scrollIntoView({behavior: azHareket ? "auto" : "smooth", block:"nearest"});
+}
+
+/* Caveat fontunu tuval etiketleri için önden yükle */
+if(document.fonts && document.fonts.load){
+  document.fonts.load("700 24px Caveat").catch(() => {});
+}
+</script>
+</body>
+</html>
