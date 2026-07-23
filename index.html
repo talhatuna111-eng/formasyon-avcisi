@@ -315,6 +315,7 @@ footer .uyari{
         <button class="btn btn-mor" id="btnCanliAnaliz" type="button">🔍 Analiz</button>
       </div>
       <div class="tf-satir" id="tfSatir">
+        <button class="tf" data-tf="5m" type="button">5D</button>
         <button class="tf" data-tf="15m" type="button">15D</button>
         <button class="tf aktif" data-tf="1h" type="button">1S</button>
         <button class="tf" data-tf="4h" type="button">4S</button>
@@ -977,7 +978,7 @@ function sekilAnimasyon(s){
 
 async function sekilleriCiz(cizimler){
   S.cizildi = [];
-  const liste = cizimler.slice(0, 8);
+  const liste = cizimler.slice(0, 10);
   for(const s of liste){
     await sekilAnimasyon(s);
     if(!azHareket) await new Promise(r => setTimeout(r, 130)); // tak... tak...
@@ -1032,7 +1033,8 @@ function kartiDoldur(r, kaynakEtiket, canliEk){
       ["Riske edilen (1R)", "$" + R.riskTutar.toFixed(2) + " · %" + R.yuzde],
       ["Pozisyon büyüklüğü", "$" + Math.round(R.notional).toLocaleString("en-US")],
       ["Gerekli marjin (" + R.kald + "x)", "$" + Math.round(R.marjin).toLocaleString("en-US")],
-      ["Hedefe ulaşırsa", "+$" + Math.round(R.kar).toLocaleString("en-US") + (rr ? " (+" + rr + "R)" : "")],
+      ["TP1'de yarıyı kapat", "+$" + Math.round(R.riskTutar / 2).toLocaleString("en-US") + " kilitlenir"],
+      ["TP2'de toplam", "+$" + Math.round((R.riskTutar + R.kar) / 2).toLocaleString("en-US") + (rr ? " (+" + (Math.round((0.5 + rr / 2) * 10) / 10) + "R)" : "")],
       ["Tahmini likidasyon", "≈ " + fmtF(R.likF)]
     ].forEach(cift => {
       const div = document.createElement("div"); div.className = "rk-satir";
@@ -1069,8 +1071,16 @@ function kartiDoldur(r, kaynakEtiket, canliEk){
    ================================================================== */
 
 /* ---------- Sabitler & format ---------- */
-const UST_TF = {"15m":"4h", "1h":"4h", "4h":"1d", "1d":"1w"};
-const TF_ETIKET = {"15m":"15D", "1h":"1S", "4h":"4S", "1d":"1G", "1w":"1H"};
+const UST_TF = {"5m":"1h", "15m":"4h", "1h":"4h", "4h":"1d", "1d":"1w"};
+const TF_ETIKET = {"5m":"5D", "15m":"15D", "1h":"1S", "4h":"4S", "1d":"1G", "1w":"1H"};
+const TF_DAKIKA = {"5m":5, "15m":15, "1h":60, "4h":240, "1d":1440};
+
+function sureMetni(bar, tf){
+  const dk = bar * (TF_DAKIKA[tf] || 60);
+  if(dk < 90) return "~" + dk + " dk";
+  if(dk < 48 * 60) return "~" + Math.round(dk / 60) + " sa";
+  return "~" + Math.round(dk / 1440) + " gün";
+}
 
 function fmtF(p){
   if(p === null || p === undefined || !isFinite(p)) return "—";
@@ -1292,7 +1302,11 @@ function motor(gor, ustMum, tf){
     if(a.yon === "LONG") return a.stop < a.giris - atrS * 0.2 && a.hedef > a.giris + atrS * 0.5;
     return a.stop > a.giris + atrS * 0.2 && a.hedef < a.giris - atrS * 0.5;
   };
-  const sec = adaylar.find(gecerliMi) || null;
+  // Öncelik sırasını koru ama R:R kapısını geçen ilk adayı tercih et;
+  // hiçbiri geçemiyorsa en öncelikli geçerli aday kalır (süzgeçler BEKLE der)
+  const gecerliler = adaylar.filter(gecerliMi);
+  const rrHesap = a => Math.abs(a.hedef - a.giris) / Math.max(1e-9, Math.abs(a.giris - a.stop));
+  const sec = gecerliler.find(a => rrHesap(a) >= 1.5) || gecerliler[0] || null;
 
   // Süzgeçler — aracın "BEKLE" deme cesareti burada
   const sebepler = [];
@@ -1307,6 +1321,14 @@ function motor(gor, ustMum, tf){
     if(sec.yon === "LONG" && rsiS > 76) sebepler.push("RSI aşırı alım (" + Math.round(rsiS) + ")");
     if(sec.yon === "SHORT" && rsiS < 24) sebepler.push("RSI aşırı satım (" + Math.round(rsiS) + ")");
     yon = sebepler.length ? "BEKLE" : sec.yon;
+    // TP1 = 1R "seri çıkış" hedefi (yapısal TP2'yi asla aşmaz)
+    const riskMes = Math.abs(sec.giris - sec.stop);
+    sec.hedef1 = sec.yon === "LONG"
+      ? Math.min(sec.giris + riskMes, sec.hedef)
+      : Math.max(sec.giris - riskMes, sec.hedef);
+    // ATR hızına göre kaba süre tahmini (fiyat salınarak ilerler; bar başına ~0.6 ATR net yol varsayımı)
+    sec.sure1 = Math.max(2, Math.ceil(Math.abs(sec.hedef1 - sec.giris) / (atrS * 0.6)));
+    sec.sure2 = Math.max(3, Math.ceil(Math.abs(sec.hedef  - sec.giris) / (atrS * 0.6)));
     guven = 45 + Math.min(12, (sec.temas || 2) * 3) + (hacimOnay ? 12 : 0)
           + (uyum === true ? 15 : 0) + (uyum === null ? 4 : 0)
           + (((sec.yon === "LONG" && rsiS >= 45 && rsiS <= 68) || (sec.yon === "SHORT" && rsiS >= 32 && rsiS <= 55)) ? 8 : 0)
@@ -1330,7 +1352,8 @@ function motor(gor, ustMum, tf){
     if(yon !== "BEKLE"){
       ciz.push({tip: "bolge", i1: Math.max(0, N - 8), f1: sec.giris + atrS * 0.18, f2: sec.giris - atrS * 0.18, etiket: "Giriş " + fmtF(sec.giris), renk: "mavi"});
       ciz.push({tip: "yatay", f: sec.stop, i1: Math.max(0, N - 26), etiket: "Stop " + fmtF(sec.stop), renk: "kirmizi", stil: "kesikli"});
-      ciz.push({tip: "yatay", f: sec.hedef, i1: Math.max(0, N - 26), etiket: "Hedef " + fmtF(sec.hedef), renk: "turkuaz", stil: "kesikli"});
+      ciz.push({tip: "yatay", f: sec.hedef1, i1: Math.max(0, N - 20), etiket: "TP1 " + fmtF(sec.hedef1), renk: "turkuaz", stil: "kesikli"});
+      ciz.push({tip: "yatay", f: sec.hedef, i1: Math.max(0, N - 26), etiket: "TP2 " + fmtF(sec.hedef), renk: "turkuaz", stil: "kesikli"});
       ciz.push({tip: "ok", i1: N - 2, f1: sec.giris, i2: sonU + 3, f2: sec.hedef, etiket: "", renk: sec.yon === "LONG" ? "yesil" : "kirmizi", stil: "kesikli"});
     } else if(sec.kosul){
       ciz.push({tip: "yatay", f: sec.giris, i1: Math.max(0, N - 26), etiket: "Tetik " + fmtF(sec.giris), renk: "mavi", stil: "kesikli"});
@@ -1344,9 +1367,10 @@ function motor(gor, ustMum, tf){
 
   let aksiyon;
   if(sec && yon !== "BEKLE"){
+    const protokol = "TP1 " + fmtF(sec.hedef1) + " (" + sureMetni(sec.sure1, tf) + ") — yarıyı kapat, stopu girişe çek. TP2 " + fmtF(sec.hedef) + " (" + sureMetni(sec.sure2, tf) + ", R:R " + sec.rr + ").";
     aksiyon = sec.kosul
-      ? fmtF(sec.giris) + (sec.yon === "LONG" ? " üstünde " : " altında ") + TF_ETIKET[tf] + " kapanışı gelirse " + sec.yon.toLowerCase() + " — stop " + fmtF(sec.stop) + ", hedef " + fmtF(sec.hedef) + " (R:R " + sec.rr + ")."
-      : fmtF(sec.giris) + " civarından " + sec.yon.toLowerCase() + " — stop " + fmtF(sec.stop) + ", hedef " + fmtF(sec.hedef) + " (R:R " + sec.rr + ").";
+      ? fmtF(sec.giris) + (sec.yon === "LONG" ? " üstünde " : " altında ") + TF_ETIKET[tf] + " kapanışı gelirse " + sec.yon.toLowerCase() + " — stop " + fmtF(sec.stop) + ". " + protokol
+      : fmtF(sec.giris) + " civarından " + sec.yon.toLowerCase() + " — stop " + fmtF(sec.stop) + ". " + protokol;
   } else {
     aksiyon = "İşleme girme: " + sebepler.join(" · ") + ".";
   }
@@ -1538,7 +1562,7 @@ async function canliAnaliz(){
     const kayit = (m.yon !== "BEKLE" && m.sec) ? {
       id: String(Date.now()), ts: Date.now(), sembol: s, tf,
       yon: m.yon, formasyon: m.sec.ad,
-      giris: m.sec.giris, stop: m.sec.stop, hedef: m.sec.hedef,
+      giris: m.sec.giris, stop: m.sec.stop, hedef1: m.sec.hedef1, hedef: m.sec.hedef,
       rr: m.sec.rr, guven: m.guven, durum: "acik", sonuc: null, r: null
     } : null;
 
@@ -1557,6 +1581,7 @@ async function canliAnaliz(){
     kartiDoldur(r, "Yerel algoritma · Binance verisi", {
       cipler: [
         m.sec ? "R:R " + m.sec.rr : null,
+        (m.sec && m.yon !== "BEKLE") ? "⏱ TP1 " + sureMetni(m.sec.sure1, tf) + " · TP2 " + sureMetni(m.sec.sure2, tf) : null,
         TF_ETIKET[ustTf] + " trend: " + m.ustTrend + (m.uyum === true ? " ✓" : (m.uyum === false ? " ✗" : ""))
       ].filter(Boolean),
       risk, kayit
@@ -1619,7 +1644,7 @@ function karneGoster(){
   if(bol.classList.contains("gizli")) return;
 
   const kapali = l.filter(k => k.durum === "kapandi");
-  const hedefli = kapali.filter(k => k.sonuc === "hedef").length;
+  const hedefli = kapali.filter(k => k.sonuc === "hedef" || k.sonuc === "tp1").length;
   const isabet = kapali.length ? Math.round(100 * hedefli / kapali.length) : null;
   const topR = kapali.reduce((s, k) => s + (typeof k.r === "number" ? k.r : 0), 0);
 
@@ -1648,7 +1673,8 @@ function karneGoster(){
     k2.textContent = k.formasyon + " · stop " + fmtF(k.stop) + " · hedef " + fmtF(k.hedef);
     kb.appendChild(k1); kb.appendChild(k2);
     const kd = document.createElement("span");
-    if(k.durum === "kapandi" && k.sonuc === "hedef"){ kd.className = "kdurum kd-hedef"; kd.textContent = "🎯 +" + (k.rr || 1) + "R"; }
+    if(k.durum === "kapandi" && k.sonuc === "hedef"){ kd.className = "kdurum kd-hedef"; kd.textContent = "🎯 +" + (typeof k.r === "number" ? k.r : (k.rr || 1)) + "R"; }
+    else if(k.durum === "kapandi" && k.sonuc === "tp1"){ kd.className = "kdurum kd-hedef"; kd.textContent = "🥈 +0.5R"; }
     else if(k.durum === "kapandi" && k.sonuc === "stop"){ kd.className = "kdurum kd-stop"; kd.textContent = "🛑 −1R"; }
     else { kd.className = "kdurum kd-acik"; kd.textContent = "⏳ " + zamanFarki(k.ts); }
     const sil = document.createElement("button"); sil.className = "sil"; sil.setAttribute("aria-label", "Sil"); sil.textContent = "×";
@@ -1667,21 +1693,35 @@ async function karneGuncelle(){
   for(const k of acik){
     try {
       const m = await klineGetir(k.sembol, k.tf, {startTime: k.ts, limit: 500});
-      let faz = 1; // 1: giriş tetiklenmesini bekle, 2: pozisyonda
+      const tp1 = k.hedef1 || null;
+      let faz = 1; // 1: giriş tetiklenmesini bekle, 2: pozisyonda (TP1 öncesi), 3: TP1 sonrası (stop = giriş)
       for(const c of m){
         if(faz === 1){
           const tetik = k.yon === "LONG" ? c.h >= k.giris : c.l <= k.giris;
           if(!tetik) continue;
           faz = 2;
-          const stopAyni = k.yon === "LONG" ? c.l <= k.stop : c.h >= k.stop;
-          if(stopAyni){ k.durum = "kapandi"; k.sonuc = "stop"; k.r = -1; break; }
-          const hedefAyni = k.yon === "LONG" ? c.h >= k.hedef : c.l <= k.hedef;
-          if(hedefAyni){ k.durum = "kapandi"; k.sonuc = "hedef"; k.r = k.rr || 1; break; }
-        } else {
-          const stopK  = k.yon === "LONG" ? c.l <= k.stop  : c.h >= k.stop;
-          const hedefK = k.yon === "LONG" ? c.h >= k.hedef : c.l <= k.hedef;
-          if(stopK){ k.durum = "kapandi"; k.sonuc = "stop"; k.r = -1; break; } // aynı mumda ikisi de varsa temkinli davran: stop say
-          if(hedefK){ k.durum = "kapandi"; k.sonuc = "hedef"; k.r = k.rr || 1; break; }
+        }
+        if(faz === 2){
+          const stopK = k.yon === "LONG" ? c.l <= k.stop : c.h >= k.stop;
+          if(stopK){ k.durum = "kapandi"; k.sonuc = "stop"; k.r = -1; break; } // aynı mumda çakışmada temkinli: stop say
+          if(tp1){
+            const tp1K = k.yon === "LONG" ? c.h >= tp1 : c.l <= tp1;
+            if(tp1K){
+              faz = 3; // yarı kapandı, stop girişe çekildi
+              const tp2Ayni = k.yon === "LONG" ? c.h >= k.hedef : c.l <= k.hedef;
+              if(tp2Ayni){ k.durum = "kapandi"; k.sonuc = "hedef"; k.r = Math.round((0.5 + (k.rr || 2) / 2) * 10) / 10; break; }
+              continue;
+            }
+          } else {
+            const hedefK = k.yon === "LONG" ? c.h >= k.hedef : c.l <= k.hedef;
+            if(hedefK){ k.durum = "kapandi"; k.sonuc = "hedef"; k.r = k.rr || 1; break; }
+          }
+        }
+        if(faz === 3){
+          const girisK = k.yon === "LONG" ? c.l <= k.giris : c.h >= k.giris;
+          if(girisK){ k.durum = "kapandi"; k.sonuc = "tp1"; k.r = 0.5; break; } // kalan yarı beraberlikte çıktı
+          const tp2K = k.yon === "LONG" ? c.h >= k.hedef : c.l <= k.hedef;
+          if(tp2K){ k.durum = "kapandi"; k.sonuc = "hedef"; k.r = Math.round((0.5 + (k.rr || 2) / 2) * 10) / 10; break; }
         }
       }
       await new Promise(res => setTimeout(res, 250));
