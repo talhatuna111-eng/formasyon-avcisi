@@ -312,8 +312,9 @@ footer .uyari{
 
   <!-- Mod seçimi -->
   <div class="modlar" role="tablist">
-    <button class="mod aktif" id="modCanli" type="button">📡 Canlı Coin</button>
-    <button class="mod" id="modFoto" type="button">📷 Ekran Görüntüsü</button>
+    <button class="mod aktif" id="modCanli" type="button">📡 Canlı</button>
+    <button class="mod" id="modBot" type="button">🤖 Bot</button>
+    <button class="mod" id="modFoto" type="button">📷 Foto</button>
   </div>
 
   <!-- Canlı coin paneli -->
@@ -425,6 +426,42 @@ footer .uyari{
       <button class="btn btn-cizgi gizli" id="btnKarne" type="button">📌 Karneye işle</button>
     </div>
     <div class="saglayici"><span class="nokta"></span><span id="saglayiciMetin"></span></div>
+  </div>
+
+  <!-- Bot paneli -->
+  <div id="botPanel" class="gizli">
+    <div class="canli-kart">
+      <div class="risk-gridi" style="grid-template-columns:1fr 1.4fr">
+        <div class="risk-alan"><label for="botBakiye">Bakiye ($)</label><input id="botBakiye" type="number" inputmode="decimal" value="100" min="10"></div>
+        <div class="risk-alan"><label>Bot TF</label>
+          <div class="tf-satir" id="botTfSatir" style="margin-top:0">
+            <button class="tf aktif" data-tf="5m" type="button">5D</button>
+            <button class="tf" data-tf="15m" type="button">15D</button>
+          </div>
+        </div>
+      </div>
+      <div class="risk-alan" style="margin-top:10px"><label>Risk modu</label>
+        <div class="tf-satir" id="botModSatir" style="margin-top:0">
+          <button class="tf" data-modu="temkinli" type="button">Temkinli</button>
+          <button class="tf aktif" data-modu="dengeli" type="button">Dengeli</button>
+          <button class="tf" data-modu="cesur" type="button">Cesur</button>
+        </div>
+      </div>
+      <div class="buton-satir" style="margin-top:12px">
+        <button class="btn btn-mor" id="btnBotBaslat" type="button" style="flex:1">▶️ Botu başlat</button>
+        <button class="btn btn-cizgi gizli" id="btnBotDurdur" type="button" style="flex:1">⏹ Günü kapat</button>
+        <button class="btn btn-cizgi" id="btnBotSifirla" type="button">🗑</button>
+      </div>
+      <div class="sim-not" id="botDurum">Bot kapalı. Başlatınca 24s hacim liderlerini tarar, sinyal bulunca sanal pozisyon açar. Sayfa açıkken çalışır; kapatıp dönersen kaldığı yerden devralır.</div>
+    </div>
+    <div class="karne gizli" id="botSonuc" style="margin-top:14px">
+      <div class="not-baslik">Bot Karnesi 🤖</div>
+      <div class="karne-ozet" id="botOzet"></div>
+      <canvas id="botGrafik" height="70" style="width:100%;height:70px;display:block;margin:2px 0 12px"></canvas>
+      <div id="botPozlar"></div>
+      <div class="sim-tablo-kap"><table class="sim-tablo" id="botTablo"></table></div>
+      <div class="sim-not" id="botNot"></div>
+    </div>
   </div>
 
   <!-- Simülasyon sonucu -->
@@ -1654,13 +1691,16 @@ function modAyarla(m){
   if(S.mesgul) return;
   S.mod = m;
   $("modCanli").classList.toggle("aktif", m === "canli");
+  $("modBot").classList.toggle("aktif", m === "bot");
   $("modFoto").classList.toggle("aktif", m === "foto");
   $("canliPanel").classList.toggle("gizli", m !== "canli");
+  $("botPanel").classList.toggle("gizli", m !== "bot");
   $("simBolum").classList.add("gizli");
   sifirla();
   karneGoster();
 }
 $("modCanli").addEventListener("click", () => modAyarla("canli"));
+$("modBot").addEventListener("click", () => modAyarla("bot"));
 $("modFoto").addEventListener("click", () => modAyarla("foto"));
 
 /* ---------- Sinyal karnesi ---------- */
@@ -1794,6 +1834,37 @@ async function klineCok(sembol, tf, toplam){
   return out.slice(-(toplam + 2));
 }
 
+/* Tek mumluk pozisyon yönetimi — sim ve bot aynı kuralları paylaşır (temkinli: önce aleyhte) */
+function pozAdimi(poz, bar, FEE){
+  const L = poz.yon === "LONG";
+  const girisFee = poz.notional * FEE;
+  if(poz.faz === 2){
+    const likOnce = L ? (poz.likF > poz.stop) : (poz.likF < poz.stop);
+    const aleyh = likOnce ? poz.likF : poz.stop;
+    if(L ? bar.l <= aleyh : bar.h >= aleyh){
+      if(likOnce) return {kapandi: true, sonuc: "LİKİT", pnl: -(poz.marjin + girisFee)};
+      return {kapandi: true, sonuc: "STOP", pnl: -(poz.riskTutar + girisFee + poz.notional * FEE)};
+    }
+    if(L ? bar.h >= poz.tp1 : bar.l <= poz.tp1){
+      poz.faz = 3;
+      poz.banked = poz.riskTutar / 2 - (poz.notional / 2) * FEE;
+      if(L ? bar.h >= poz.tp2 : bar.l <= poz.tp2){
+        const kalan = (poz.notional / 2) * Math.abs(poz.tp2 - poz.giris) / poz.giris;
+        return {kapandi: true, sonuc: "TP2", pnl: poz.banked + kalan - (poz.notional / 2) * FEE - girisFee};
+      }
+    }
+  }
+  if(poz.faz === 3){
+    if(L ? bar.l <= poz.giris : bar.h >= poz.giris)
+      return {kapandi: true, sonuc: "TP1", pnl: poz.banked - (poz.notional / 2) * FEE - girisFee};
+    if(L ? bar.h >= poz.tp2 : bar.l <= poz.tp2){
+      const kalan = (poz.notional / 2) * Math.abs(poz.tp2 - poz.giris) / poz.giris;
+      return {kapandi: true, sonuc: "TP2", pnl: poz.banked + kalan - (poz.notional / 2) * FEE - girisFee};
+    }
+  }
+  return {kapandi: false};
+}
+
 /* Saf simülasyon çekirdeği — DOM'suz, test edilebilir.
    ayar: {bakiye, riskYuzde, kald, tf, fee}  →  {isler, egri, bakiye, notlar} */
 function simMotoru(mum, ust, ayar){
@@ -1818,37 +1889,13 @@ function simMotoru(mum, ust, ayar){
     const bar = mum[i];
     const barKapanis = bar.t + tfMin * 60000;
 
-    // --- açık pozisyonu yönet (temkinli: önce aleyhte seviye) ---
+    // --- açık pozisyonu yönet (ortak kural: pozAdimi) ---
     if(poz){
-      const L = poz.yon === "LONG";
-      const girisFee = poz.notional * FEE;
-      if(poz.faz === 2){
-        const likOnce = L ? (poz.likF > poz.stop) : (poz.likF < poz.stop);
-        const aleyh = likOnce ? poz.likF : poz.stop;
-        const aleyhVur = L ? bar.l <= aleyh : bar.h >= aleyh;
-        if(aleyhVur){
-          if(likOnce){ notlar.add("En az bir pozisyon likit oldu — stop, likidasyonun gerisindeydi."); kapat("LİKİT", -(poz.marjin + girisFee), barKapanis); continue; }
-          kapat("STOP", -(poz.riskTutar + girisFee + poz.notional * FEE), barKapanis); continue;
-        }
-        const tp1Vur = L ? bar.h >= poz.tp1 : bar.l <= poz.tp1;
-        if(tp1Vur){
-          poz.faz = 3;
-          poz.banked = poz.riskTutar / 2 - (poz.notional / 2) * FEE;
-          const tp2Ayni = L ? bar.h >= poz.tp2 : bar.l <= poz.tp2;
-          if(tp2Ayni){
-            const kalan = (poz.notional / 2) * Math.abs(poz.tp2 - poz.giris) / poz.giris;
-            kapat("TP2", poz.banked + kalan - (poz.notional / 2) * FEE - girisFee, barKapanis); continue;
-          }
-        }
-      }
-      if(poz && poz.faz === 3){
-        const geriVur = L ? bar.l <= poz.giris : bar.h >= poz.giris;
-        if(geriVur){ kapat("TP1", poz.banked - (poz.notional / 2) * FEE - girisFee, barKapanis); continue; }
-        const tp2Vur = L ? bar.h >= poz.tp2 : bar.l <= poz.tp2;
-        if(tp2Vur){
-          const kalan = (poz.notional / 2) * Math.abs(poz.tp2 - poz.giris) / poz.giris;
-          kapat("TP2", poz.banked + kalan - (poz.notional / 2) * FEE - girisFee, barKapanis); continue;
-        }
+      const ad = pozAdimi(poz, bar, FEE);
+      if(ad.kapandi){
+        if(ad.sonuc === "LİKİT") notlar.add("En az bir pozisyon likit oldu — stop, likidasyonun gerisindeydi.");
+        kapat(ad.sonuc, ad.pnl, barKapanis);
+        continue;
       }
     }
 
@@ -2045,6 +2092,436 @@ function simSonucGoster(R, meta){
   $("simBolum").classList.remove("gizli");
   $("simBolum").scrollIntoView({behavior: azHareket ? "auto" : "smooth", block: "start"});
 }
+
+/* ==================================================================
+   🤖 CANLI BOT (sanal) — coin'i kendi seçer, kaldıracı kendi ayarlar
+   ================================================================== */
+const BOT_MODLAR = {
+  temkinli: {risk: 1,   maxPoz: 1, kaldTavan: 5,  ad: "Temkinli"},
+  dengeli:  {risk: 2.5, maxPoz: 2, kaldTavan: 10, ad: "Dengeli"},
+  cesur:    {risk: 4,   maxPoz: 3, kaldTavan: 20, ad: "Cesur"}
+};
+const BOT_FEE = 0.0005;
+const STABIL = /^(USDC|FDUSD|TUSD|BUSD|DAI|USDP|EUR|EURI|AEUR|XUSD|USD1|PAXG)$/;
+let botZamanlayici = null, botFiyatSayac = null, botMesgul = false;
+const botUstOnbellek = {};
+
+function botDurumOku(){
+  try { return JSON.parse(localStorage.getItem("fa_bot") || "null"); } catch(e){ return null; }
+}
+function botDurumYaz(B){
+  try { localStorage.setItem("fa_bot", JSON.stringify(B)); } catch(e){}
+}
+
+/* Kaldıracı stop mesafesine göre botun kendisi seçer:
+   likidasyon mesafesi en az stop mesafesinin ~1.7 katı olacak şekilde tavanlanır */
+function botKaldirac(mesafeYuzde, notional, serbest, tavan){
+  const stopGuvenli = Math.max(1, Math.floor(0.6 / Math.max(1e-6, mesafeYuzde)));
+  const kaldMax = Math.max(1, Math.min(tavan, stopGuvenli));
+  const marjinPay = Math.max(1, serbest * 0.5);
+  let kald = Math.max(1, Math.min(kaldMax, Math.ceil(notional / marjinPay)));
+  let notEff = notional, kucultuldu = false;
+  if(notEff / kald > marjinPay){ notEff = marjinPay * kald; kucultuldu = true; }
+  return {kald, notional: notEff, marjin: notEff / kald, kucultuldu};
+}
+
+async function botEvrenGetir(){
+  const sira = hizliHost ? [hizliHost].concat(BINANCE_HOSTLAR.filter(x => x !== hizliHost)) : BINANCE_HOSTLAR;
+  for(const host of sira){
+    try {
+      const r = await zamanAsimi(fetch(host + "/api/v3/ticker/24hr"), 15000);
+      if(!r.ok) continue;
+      const d = await r.json();
+      hizliHost = host;
+      return d
+        .filter(x => x.symbol.endsWith("USDT")
+          && !/(UP|DOWN|BULL|BEAR)USDT$/.test(x.symbol)
+          && !STABIL.test(x.symbol.slice(0, -4))
+          && +x.quoteVolume > 0)
+        .sort((a, b) => +b.quoteVolume - +a.quoteVolume)
+        .slice(0, 24)
+        .map(x => x.symbol);
+    } catch(e){}
+  }
+  throw new Error("Coin listesi alınamadı");
+}
+
+async function botFiyatlar(semboller){
+  if(!semboller.length) return {};
+  const sira = hizliHost ? [hizliHost].concat(BINANCE_HOSTLAR.filter(x => x !== hizliHost)) : BINANCE_HOSTLAR;
+  for(const host of sira){
+    try {
+      const r = await zamanAsimi(fetch(host + "/api/v3/ticker/price?symbols=" + encodeURIComponent(JSON.stringify(semboller))), 8000);
+      if(!r.ok) continue;
+      const d = await r.json();
+      const out = {};
+      d.forEach(x => { out[x.symbol] = +x.price; });
+      return out;
+    } catch(e){}
+  }
+  return {};
+}
+
+async function botUst(sembol, tf){
+  const ustTf = UST_TF[tf] || "1h";
+  const ustMs = (TF_DAKIKA[ustTf] || 60) * 60000;
+  const simdi = Date.now();
+  const onb = botUstOnbellek[sembol];
+  if(onb && onb.tf === ustTf && simdi - onb.zaman < ustMs) return onb.mumlar;
+  try {
+    const m = await klineGetir(sembol, ustTf, {limit: 120});
+    const kapali = m.filter(k => k.t + ustMs <= simdi);
+    botUstOnbellek[sembol] = {tf: ustTf, mumlar: kapali, zaman: simdi};
+    return kapali;
+  } catch(e){ return onb ? onb.mumlar : null; }
+}
+
+function botKapat(B, poz, sonuc, pnl, ts){
+  B.bakiye += pnl;
+  B.isler.unshift({t: poz.tGiris, tC: ts, sembol: poz.sembol, yon: poz.yon, kald: poz.kald,
+                   formasyon: poz.formasyon, giris: poz.giris, sonuc, pnl, bakiye: B.bakiye});
+  B.isler = B.isler.slice(0, 200);
+  B.egri.push({t: ts, b: B.bakiye});
+  B.pozlar = B.pozlar.filter(p => p !== poz);
+  if(sonuc === "LİKİT") B.notlar = Array.from(new Set((B.notlar || []).concat(["Bir pozisyon likit oldu — kaldıraç dersinin bedeli sanal ödendi."])));
+}
+
+/* Sen yokken kapanması gerekenleri gerçek mum geçmişiyle kapat */
+async function botDevral(B){
+  const tfMs = (TF_DAKIKA[B.tf] || 5) * 60000;
+  for(const poz of B.pozlar.slice()){
+    try {
+      const m = await klineGetir(poz.sembol, B.tf, {startTime: poz.sonMumT + tfMs, limit: 500});
+      const kapali = m.filter(k => k.t > poz.sonMumT && k.t + tfMs <= Date.now());
+      for(const bar of kapali){
+        poz.sonMumT = bar.t;
+        const ad = pozAdimi(poz, bar, BOT_FEE);
+        if(ad.kapandi){ botKapat(B, poz, ad.sonuc, ad.pnl, bar.t + tfMs); break; }
+      }
+    } catch(e){}
+    await new Promise(res => setTimeout(res, 120));
+  }
+}
+
+async function botTik(){
+  const B = botDurumOku();
+  if(!B || !B.aktif || botMesgul) return;
+  botMesgul = true;
+  try {
+    const tfMs = (TF_DAKIKA[B.tf] || 5) * 60000;
+    const simdi = Date.now();
+    const modu = BOT_MODLAR[B.modu] || BOT_MODLAR.dengeli;
+
+    // izleme listesi bayatsa yenile (30 dk)
+    if(!B.izlenen || !B.izlenen.length || simdi - (B.sonEvren || 0) > 30 * 60000){
+      try { B.izlenen = await botEvrenGetir(); B.sonEvren = simdi; } catch(e){ if(!B.izlenen) B.izlenen = ["BTCUSDT","ETHUSDT","SOLUSDT"]; }
+    }
+
+    // tarama: açık pozisyon sembolleri + izlenenler için mumları çek
+    const adaylar = [];
+    const taranacak = Array.from(new Set(B.pozlar.map(p => p.sembol).concat(B.izlenen)));
+    for(const sembol of taranacak){
+      try {
+        const m = await klineGetir(sembol, B.tf, {limit: 130});
+        const kapali = m.filter(k => k.t + tfMs <= simdi);
+        if(kapali.length < 111){ await new Promise(res => setTimeout(res, 60)); continue; }
+
+        // 1) bu sembolde açık pozisyon varsa yeni kapanan mumlarla yönet
+        const poz = B.pozlar.find(p => p.sembol === sembol);
+        if(poz){
+          const yeni = kapali.filter(k => k.t > poz.sonMumT);
+          for(const bar of yeni){
+            poz.sonMumT = bar.t;
+            const ad = pozAdimi(poz, bar, BOT_FEE);
+            if(ad.kapandi){ botKapat(B, poz, ad.sonuc, ad.pnl, bar.t + tfMs); break; }
+          }
+        }
+        // 2) pozisyon yoksa sinyal ara
+        else if(B.pozlar.length < modu.maxPoz){
+          const ust = await botUst(sembol, B.tf);
+          const r = motor(kapali.slice(-110), ust && ust.length >= 60 ? ust : null, B.tf);
+          if((r.yon === "LONG" || r.yon === "SHORT") && r.sec && !r.sec.kosul)
+            adaylar.push({sembol, r, sonT: kapali[kapali.length - 1].t});
+        }
+        await new Promise(res => setTimeout(res, 60));
+      } catch(e){ /* tek sembol hatası taramayı durdurmasın */ }
+    }
+
+    // en iyi adaylarla boş yuvaları doldur
+    adaylar.sort((a, b) => (b.r.guven - a.r.guven) || ((b.r.sec.rr || 0) - (a.r.sec.rr || 0)));
+    for(const a of adaylar){
+      if(B.pozlar.length >= modu.maxPoz) break;
+      if(B.pozlar.some(p => p.sembol === a.sembol)) continue;
+      const sec = a.r.sec, giris = sec.giris;
+      const mesafe = Math.abs(giris - sec.stop) / giris;
+      if(!(mesafe > 0)) continue;
+      const marjKullanim = B.pozlar.reduce((s, p) => s + p.marjin, 0);
+      const serbest = B.bakiye - marjKullanim;
+      if(serbest < 5) break;
+      let riskTutar = B.bakiye * modu.risk / 100;
+      let notional = riskTutar / mesafe;
+      const K = botKaldirac(mesafe, notional, serbest, modu.kaldTavan);
+      notional = K.notional;
+      riskTutar = notional * mesafe;
+      if(notional < 5) continue;
+      const L = a.r.yon === "LONG";
+      B.pozlar.push({
+        sembol: a.sembol, yon: a.r.yon, formasyon: sec.ad,
+        giris, stop: sec.stop, tp2: sec.hedef,
+        tp1: L ? giris + Math.abs(giris - sec.stop) : giris - Math.abs(giris - sec.stop),
+        riskTutar, notional, marjin: K.marjin, kald: K.kald,
+        likF: L ? giris * (1 - 1 / K.kald) : giris * (1 + 1 / K.kald),
+        faz: 2, banked: 0, tGiris: simdi, sonMumT: a.sonT, guven: a.r.guven
+      });
+      if(K.kucultuldu) B.notlar = Array.from(new Set((B.notlar || []).concat(["Serbest marjin sınırında bazı pozisyonlar küçültüldü."])));
+    }
+
+    B.sonTik = simdi;
+    botDurumYaz(B);
+    botCiz(B);
+  } finally {
+    botMesgul = false;
+    botZamanla();
+  }
+}
+
+function botZamanla(){
+  const B = botDurumOku();
+  clearTimeout(botZamanlayici);
+  if(!B || !B.aktif) return;
+  const tfMs = (TF_DAKIKA[B.tf] || 5) * 60000;
+  const hedef = Math.ceil(Date.now() / tfMs) * tfMs + 5000;
+  botZamanlayici = setTimeout(botTik, Math.max(1500, hedef - Date.now()));
+}
+
+async function botFiyatTik(){
+  const B = botDurumOku();
+  if(!B || !B.aktif || !B.pozlar.length){ botCiz(B); return; }
+  const f = await botFiyatlar(B.pozlar.map(p => p.sembol));
+  botCiz(B, f);
+}
+
+async function botBaslat(){
+  if(botDurumOku() && botDurumOku().aktif) return;
+  const bakiye0 = Math.max(10, +$("botBakiye").value || 100);
+  const tfB = document.querySelector("#botTfSatir .tf.aktif");
+  const moduB = document.querySelector("#botModSatir .tf.aktif");
+  const B = {
+    aktif: true, tf: tfB ? tfB.dataset.tf : "5m",
+    modu: moduB ? moduB.dataset.modu : "dengeli",
+    bakiye0, bakiye: bakiye0, basTs: Date.now(),
+    pozlar: [], isler: [], egri: [{t: Date.now(), b: bakiye0}],
+    izlenen: [], notlar: [], sonTik: 0, sonEvren: 0
+  };
+  botDurumYaz(B);
+  botArayuz();
+  $("botDurum").textContent = "Bot çalışıyor — ilk tarama yapılıyor...";
+  botTik();
+  clearInterval(botFiyatSayac);
+  botFiyatSayac = setInterval(botFiyatTik, 20000);
+}
+
+async function botDurdur(){
+  const B = botDurumOku();
+  if(!B) return;
+  // açık pozisyonları güncel fiyattan kapat
+  if(B.pozlar.length){
+    const f = await botFiyatlar(B.pozlar.map(p => p.sembol));
+    for(const poz of B.pozlar.slice()){
+      const guncel = f[poz.sembol] || poz.giris;
+      const L = poz.yon === "LONG";
+      const kalanNot = poz.faz === 3 ? poz.notional / 2 : poz.notional;
+      const yonluF = (guncel - poz.giris) / poz.giris * (L ? 1 : -1);
+      const pnl = (poz.faz === 3 ? poz.banked : 0) + kalanNot * yonluF - kalanNot * BOT_FEE - poz.notional * BOT_FEE;
+      botKapat(B, poz, "KAPAT", pnl, Date.now());
+    }
+  }
+  B.aktif = false;
+  botDurumYaz(B);
+  clearTimeout(botZamanlayici); clearInterval(botFiyatSayac);
+  botArayuz(); botCiz(B);
+  $("botDurum").textContent = "Gün kapandı. Sonuç aşağıda — Sıfırla ile yeni güne başlayabilirsin.";
+}
+
+function botSifirla(){
+  clearTimeout(botZamanlayici); clearInterval(botFiyatSayac);
+  try { localStorage.removeItem("fa_bot"); } catch(e){}
+  $("botSonuc").classList.add("gizli");
+  botArayuz();
+  $("botDurum").textContent = "Bot kapalı. Başlatınca 24s hacim liderlerini tarar, sinyal bulunca sanal pozisyon açar. Sayfa açıkken çalışır; kapatıp dönersen kaldığı yerden devralır.";
+}
+
+function botArayuz(){
+  const B = botDurumOku();
+  const aktif = !!(B && B.aktif);
+  $("btnBotBaslat").classList.toggle("gizli", aktif);
+  $("btnBotDurdur").classList.toggle("gizli", !aktif);
+  $("botBakiye").disabled = aktif;
+  document.querySelectorAll("#botTfSatir .tf, #botModSatir .tf").forEach(b => { b.disabled = aktif; b.style.opacity = aktif ? .55 : 1; });
+}
+
+function botCiz(B, fiyatlar){
+  if(!B){ return; }
+  const kap = $("botSonuc");
+  if(!B.isler.length && !B.pozlar.length && !B.aktif){ kap.classList.add("gizli"); return; }
+  kap.classList.remove("gizli");
+  const f = fiyatlar || {};
+
+  // gerçekleşmemiş PnL
+  let uPnl = 0;
+  B.pozlar.forEach(p => {
+    const g = f[p.sembol];
+    if(!g) return;
+    const L = p.yon === "LONG";
+    const kalanNot = p.faz === 3 ? p.notional / 2 : p.notional;
+    uPnl += (p.faz === 3 ? p.banked : 0) + kalanNot * (g - p.giris) / p.giris * (L ? 1 : -1);
+  });
+
+  const net = B.bakiye - B.bakiye0;
+  const kazanan = B.isler.filter(x => x.pnl > 0).length;
+  const isabet = B.isler.length ? Math.round(100 * kazanan / B.isler.length) : null;
+  let tepe = B.bakiye0, dd = 0;
+  (B.egri || []).forEach(p => { if(p.b > tepe) tepe = p.b; dd = Math.max(dd, (tepe - p.b) / tepe); });
+
+  const oz = $("botOzet"); oz.innerHTML = "";
+  [
+    ["$" + B.bakiye.toFixed(2), "Bakiye"],
+    [(net >= 0 ? "+" : "−") + "$" + Math.abs(net).toFixed(2), "Net"],
+    [(uPnl >= 0 ? "+" : "−") + "$" + Math.abs(uPnl).toFixed(2), "Açık PnL ≈"],
+    [String(B.isler.length), "İşlem"],
+    [isabet === null ? "—" : "%" + isabet, "İsabet"],
+    ["%" + (dd * 100).toFixed(1), "Maks. düşüş"]
+  ].forEach(cift => {
+    const div = document.createElement("div"); div.className = "ko";
+    const d1 = document.createElement("div"); d1.className = "kd"; d1.textContent = cift[0];
+    if(cift[1] === "Net") d1.style.color = net >= 0 ? "var(--long)" : "var(--short)";
+    if(cift[1] === "Açık PnL ≈") d1.style.color = uPnl >= 0 ? "var(--long)" : "var(--short)";
+    const d2 = document.createElement("div"); d2.className = "kl"; d2.textContent = cift[1];
+    div.appendChild(d1); div.appendChild(d2); oz.appendChild(div);
+  });
+
+  // bakiye eğrisi
+  const cv = $("botGrafik");
+  const gw = cv.clientWidth || 320;
+  cv.width = gw * 2; cv.height = 140;
+  const g = cv.getContext("2d");
+  g.clearRect(0, 0, cv.width, cv.height);
+  const E = B.egri || [];
+  if(E.length > 1){
+    const t0 = E[0].t, t1 = E[E.length - 1].t;
+    let bMin = Infinity, bMax = -Infinity;
+    E.forEach(p => { bMin = Math.min(bMin, p.b); bMax = Math.max(bMax, p.b); });
+    const pay = (bMax - bMin) * 0.15 || 1; bMin -= pay; bMax += pay;
+    const X = t => 6 + (t - t0) / Math.max(1, t1 - t0) * (cv.width - 12);
+    const Y = b => 8 + (bMax - b) / (bMax - bMin) * (cv.height - 16);
+    g.strokeStyle = "#B6BAC6"; g.setLineDash([5, 6]); g.lineWidth = 2;
+    g.beginPath(); g.moveTo(6, Y(B.bakiye0)); g.lineTo(cv.width - 6, Y(B.bakiye0)); g.stroke();
+    g.setLineDash([]);
+    g.strokeStyle = net >= 0 ? "#0E9F6E" : "#E02424"; g.lineWidth = 3.5; g.lineJoin = "round";
+    g.beginPath();
+    E.forEach((p, i) => { const x = X(p.t), y = Y(p.b); i ? g.lineTo(x, y) : g.moveTo(x, y); });
+    g.stroke();
+  }
+
+  // açık pozisyon kartları
+  const pk = $("botPozlar"); pk.innerHTML = "";
+  B.pozlar.forEach(p => {
+    const div = document.createElement("div"); div.className = "ks";
+    const ky = document.createElement("span"); ky.className = "ky ky-" + p.yon; ky.textContent = p.yon + " " + p.kald + "x";
+    const kb = document.createElement("div"); kb.className = "kb";
+    const k1 = document.createElement("div"); k1.className = "k1";
+    const g2 = f[p.sembol];
+    k1.textContent = p.sembol + " @ " + fmtF(p.giris) + (g2 ? " → " + fmtF(g2) : "");
+    const k2 = document.createElement("div"); k2.className = "k2";
+    k2.textContent = p.formasyon + " · stop " + fmtF(p.stop) + " · TP1 " + fmtF(p.tp1) + " · TP2 " + fmtF(p.tp2) + (p.faz === 3 ? " · yarı kapandı" : "");
+    kb.appendChild(k1); kb.appendChild(k2);
+    const kd = document.createElement("span"); kd.className = "kdurum kd-acik"; kd.textContent = "⏳ " + zamanFarki(p.tGiris);
+    div.appendChild(ky); div.appendChild(kb); div.appendChild(kd);
+    pk.appendChild(div);
+  });
+
+  // işlem tablosu
+  const tb = $("botTablo"); tb.innerHTML = "";
+  const thead = document.createElement("thead"); const trh = document.createElement("tr");
+  ["Saat", "Coin", "Yön", "Formasyon", "Giriş", "Sonuç", "PnL", "Bakiye"].forEach(bs => {
+    const th = document.createElement("th"); th.textContent = bs; trh.appendChild(th);
+  });
+  thead.appendChild(trh); tb.appendChild(thead);
+  const tbody = document.createElement("tbody");
+  const ET = {"STOP": "🛑 Stop", "TP1": "🥈 TP1", "TP2": "🎯 TP2", "LİKİT": "💀 Likit", "KAPAT": "⏹ Kapat"};
+  if(!B.isler.length){
+    const tr = document.createElement("tr"); const td = document.createElement("td");
+    td.colSpan = 8; td.style.fontFamily = "inherit";
+    td.textContent = B.aktif ? "Henüz işlem yok — motor kurulum bekliyor (BEKLE de bir karardır)." : "İşlem yok.";
+    tr.appendChild(td); tbody.appendChild(tr); 
+  }
+  B.isler.forEach(x => {
+    const tr = document.createElement("tr");
+    [simSaat(x.t, true), x.sembol.replace("USDT",""), x.yon + " " + x.kald + "x",
+     x.formasyon.length > 18 ? x.formasyon.slice(0, 17) + "…" : x.formasyon,
+     fmtF(x.giris), ET[x.sonuc] || x.sonuc, simPara(x.pnl), "$" + x.bakiye.toFixed(2)
+    ].forEach((v, ci) => {
+      const td = document.createElement("td"); td.textContent = v;
+      if(ci === 2) td.className = x.yon === "LONG" ? "st-long" : "st-short";
+      if(ci === 6) td.className = x.pnl >= 0 ? "st-art" : "st-eks";
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+  tb.appendChild(tbody);
+
+  const modu = BOT_MODLAR[B.modu] || BOT_MODLAR.dengeli;
+  $("botNot").textContent =
+    modu.ad + " mod · %" + modu.risk + " risk/işlem · en çok " + modu.maxPoz + " pozisyon · kaldıraç stop mesafesine göre otomatik (tavan " + modu.kaldTavan + "x) · " +
+    (TF_ETIKET[B.tf] || B.tf) + " mumları · " + (B.izlenen ? B.izlenen.length : 0) + " coin taranıyor · komisyon %0.05/yön. " +
+    "Kararlar yalnız kapanan mumlarla alınır; sayfa kapalıyken yeni işlem açılmaz, dönünce açık pozisyonlar mum geçmişiyle devralınır. " +
+    ((B.notlar || []).join(" ") + " ") +
+    "Sanal paradır; kâr garantisi yoktur.";
+
+  // durum satırı
+  if(B.aktif){
+    const tfMs = (TF_DAKIKA[B.tf] || 5) * 60000;
+    const sonraki = Math.ceil(Date.now() / tfMs) * tfMs + 5000;
+    $("botDurum").textContent = "🟢 Bot çalışıyor · " + (B.izlenen ? B.izlenen.length : 0) + " coin · açık poz " + B.pozlar.length + "/" + modu.maxPoz +
+      " · sonraki tarama " + Math.max(0, Math.round((sonraki - Date.now()) / 1000)) + " sn · oturum " + zamanFarki(B.basTs);
+  }
+}
+
+$("btnBotBaslat").addEventListener("click", botBaslat);
+$("btnBotDurdur").addEventListener("click", botDurdur);
+$("btnBotSifirla").addEventListener("click", () => {
+  const B = botDurumOku();
+  if(B && B.aktif){ hataGoster("Önce günü kapat, sonra sıfırla."); return; }
+  botSifirla();
+});
+document.querySelectorAll("#botTfSatir .tf").forEach(b => b.addEventListener("click", () => {
+  if(b.disabled) return;
+  document.querySelectorAll("#botTfSatir .tf").forEach(x => x.classList.remove("aktif"));
+  b.classList.add("aktif");
+}));
+document.querySelectorAll("#botModSatir .tf").forEach(b => b.addEventListener("click", () => {
+  if(b.disabled) return;
+  document.querySelectorAll("#botModSatir .tf").forEach(x => x.classList.remove("aktif"));
+  b.classList.add("aktif");
+}));
+
+/* Sayfa açılışında botu devral */
+(async function botUyan(){
+  const B = botDurumOku();
+  if(!B) return;
+  botArayuz();
+  if(B.aktif){
+    $("botDurum").textContent = "Bot devralınıyor — sen yokken olanlar kontrol ediliyor...";
+    await botDevral(B);
+    botDurumYaz(B);
+    botCiz(B);
+    botTik();
+    clearInterval(botFiyatSayac);
+    botFiyatSayac = setInterval(botFiyatTik, 20000);
+  } else {
+    botCiz(B);
+  }
+})();
 
 /* ---------- AI yorum katmanı (opsiyonel, engellemez) ---------- */
 async function aiYorumGetir(m, sembol, tf){
