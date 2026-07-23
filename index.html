@@ -280,6 +280,18 @@ footer .uyari{
 .ks .kdurum{font-weight:800;font-size:12px;flex:none;text-align:right}
 .kd-hedef{color:var(--long)} .kd-stop{color:var(--short)} .kd-acik{color:var(--bekle)}
 .ks .sil{border:none;background:none;color:#B6BAC6;font-size:17px;cursor:pointer;padding:2px 5px;flex:none;line-height:1}
+/* ---------- Simülasyon ---------- */
+.sim-tablo-kap{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1.5px solid var(--grid);border-radius:11px}
+.sim-tablo{border-collapse:collapse;width:100%;min-width:600px;font-size:12px}
+.sim-tablo th{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--murekkep-soluk);text-align:left;padding:8px 10px;border-bottom:1.5px solid var(--grid);background:var(--kagit-koyu);white-space:nowrap}
+.sim-tablo td{padding:8px 10px;border-bottom:1px solid var(--grid);font-family:'JetBrains Mono',monospace;white-space:nowrap}
+.sim-tablo tr:last-child td{border-bottom:none}
+.st-long{color:var(--long);font-weight:800}
+.st-short{color:var(--short);font-weight:800}
+.st-art{color:var(--long);font-weight:700}
+.st-eks{color:var(--short);font-weight:700}
+.sim-not{font-size:11.5px;color:var(--murekkep-soluk);margin-top:10px;line-height:1.6}
+#simGrafik{width:100%;height:70px;display:block;margin:2px 0 12px}
 @media (prefers-reduced-motion: reduce){
   *{animation:none !important;transition:none !important;scroll-behavior:auto}
 }
@@ -328,6 +340,20 @@ footer .uyari{
           <div class="risk-alan"><label for="rYuzde">Risk (%)</label><input id="rYuzde" type="number" inputmode="decimal" value="1" min="0.1" step="0.1" max="5"></div>
           <div class="risk-alan"><label for="rKald">Kaldıraç (x)</label><input id="rKald" type="number" inputmode="numeric" value="5" min="1" max="50"></div>
         </div>
+      </details>
+      <details class="risk-ayar">
+        <summary>🧪 Simülasyon — sanal parayla dene</summary>
+        <div class="risk-gridi" style="grid-template-columns:1fr 2fr">
+          <div class="risk-alan"><label for="simBakiye">Bakiye ($)</label><input id="simBakiye" type="number" inputmode="decimal" value="100" min="10"></div>
+          <div class="risk-alan"><label>Süre</label>
+            <div class="tf-satir" id="simGunSatir" style="margin-top:0">
+              <button class="tf aktif" data-gun="1" type="button">1G</button>
+              <button class="tf" data-gun="3" type="button">3G</button>
+              <button class="tf" data-gun="7" type="button">7G</button>
+            </div>
+          </div>
+        </div>
+        <button class="btn btn-mor" id="btnSim" type="button" style="width:100%;margin-top:10px">▶️ Simülasyonu çalıştır</button>
       </details>
     </div>
   </div>
@@ -399,6 +425,15 @@ footer .uyari{
       <button class="btn btn-cizgi gizli" id="btnKarne" type="button">📌 Karneye işle</button>
     </div>
     <div class="saglayici"><span class="nokta"></span><span id="saglayiciMetin"></span></div>
+  </div>
+
+  <!-- Simülasyon sonucu -->
+  <div class="karne gizli" id="simBolum">
+    <div class="not-baslik">Simülasyon Sonucu 🧪</div>
+    <div class="karne-ozet" id="simOzet"></div>
+    <canvas id="simGrafik" height="70"></canvas>
+    <div class="sim-tablo-kap"><table class="sim-tablo" id="simTablo"></table></div>
+    <div class="sim-not" id="simNot"></div>
   </div>
 
   <!-- Sinyal karnesi -->
@@ -1512,15 +1547,21 @@ const canliMesajlar = [
 ];
 
 function seciliTf(){
-  const a = document.querySelector(".tf.aktif");
+  const a = document.querySelector("#tfSatir .tf.aktif");
   return a ? a.dataset.tf : "1h";
+}
+
+function normalizeSembol(){
+  let s = ($("sembolGiris").value || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if(!s) return null;
+  if(!/(USDT|USDC|FDUSD|TRY|BTC|ETH)$/.test(s)) s += "USDT";
+  return s;
 }
 
 async function canliAnaliz(){
   if(S.mesgul) return;
-  let s = ($("sembolGiris").value || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const s = normalizeSembol();
   if(!s){ hataGoster("Bir sembol yaz — örn: BTCUSDT"); return; }
-  if(!/(USDT|USDC|FDUSD|TRY|BTC|ETH)$/.test(s)) s += "USDT";
   $("sembolGiris").value = s;
   try { localStorage.setItem("fa_sembol", s); } catch(e){}
   const tf = seciliTf();
@@ -1598,10 +1639,14 @@ async function canliAnaliz(){
 
 $("btnCanliAnaliz").addEventListener("click", canliAnaliz);
 $("sembolGiris").addEventListener("keydown", e => { if(e.key === "Enter"){ e.preventDefault(); canliAnaliz(); } });
-document.querySelectorAll(".tf").forEach(b => b.addEventListener("click", () => {
-  document.querySelectorAll(".tf").forEach(x => x.classList.remove("aktif"));
+document.querySelectorAll("#tfSatir .tf").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll("#tfSatir .tf").forEach(x => x.classList.remove("aktif"));
   b.classList.add("aktif");
   try { localStorage.setItem("fa_tf", b.dataset.tf); } catch(e){}
+}));
+document.querySelectorAll("#simGunSatir .tf").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll("#simGunSatir .tf").forEach(x => x.classList.remove("aktif"));
+  b.classList.add("aktif");
 }));
 
 /* ---------- Mod yönetimi ---------- */
@@ -1611,6 +1656,7 @@ function modAyarla(m){
   $("modCanli").classList.toggle("aktif", m === "canli");
   $("modFoto").classList.toggle("aktif", m === "foto");
   $("canliPanel").classList.toggle("gizli", m !== "canli");
+  $("simBolum").classList.add("gizli");
   sifirla();
   karneGoster();
 }
@@ -1732,6 +1778,274 @@ async function karneGuncelle(){
   btn.disabled = false; btn.textContent = "🔄 Durumları güncelle";
 }
 
+/* ---------- Simülasyon: sanal parayla geriye dönük test ---------- */
+async function klineCok(sembol, tf, toplam){
+  const tfMin = TF_DAKIKA[tf] || 60;
+  let st = Date.now() - (toplam + 5) * tfMin * 60000;
+  const out = [];
+  for(let tur = 0; tur < 5 && out.length < toplam + 2; tur++){
+    const sayfa = await klineGetir(sembol, tf, {startTime: st, limit: 1000});
+    if(!sayfa.length) break;
+    const sonT = out.length ? out[out.length - 1].t : 0;
+    for(const k of sayfa) if(k.t > sonT) out.push(k);
+    if(sayfa.length < 1000) break;
+    st = sayfa[sayfa.length - 1].t + tfMin * 60000;
+  }
+  return out.slice(-(toplam + 2));
+}
+
+/* Saf simülasyon çekirdeği — DOM'suz, test edilebilir.
+   ayar: {bakiye, riskYuzde, kald, tf, fee}  →  {isler, egri, bakiye, notlar} */
+function simMotoru(mum, ust, ayar){
+  const FEE = ayar.fee !== undefined ? ayar.fee : 0.0005; // taraf başına %0.05
+  const tfMin = TF_DAKIKA[ayar.tf] || 60;
+  const ustMin = TF_DAKIKA[UST_TF[ayar.tf] || "1d"] || 1440;
+  const warm = 110;
+  let bak = ayar.bakiye, poz = null, up = 0;
+  const isler = [], egri = [], notlar = new Set();
+  if(mum.length < warm + 20) return {isler, egri, bakiye: bak, notlar: ["Yeterli veri yok"]};
+  egri.push({t: mum[warm].t, b: bak});
+
+  const kapat = (sonuc, pnl, cikisT) => {
+    bak += pnl;
+    isler.push({t: poz.tGiris, tC: cikisT, yon: poz.yon, formasyon: poz.formasyon,
+                giris: poz.giris, sonuc, pnl, bakiye: bak});
+    egri.push({t: cikisT, b: bak});
+    poz = null;
+  };
+
+  for(let i = warm; i < mum.length; i++){
+    const bar = mum[i];
+    const barKapanis = bar.t + tfMin * 60000;
+
+    // --- açık pozisyonu yönet (temkinli: önce aleyhte seviye) ---
+    if(poz){
+      const L = poz.yon === "LONG";
+      const girisFee = poz.notional * FEE;
+      if(poz.faz === 2){
+        const likOnce = L ? (poz.likF > poz.stop) : (poz.likF < poz.stop);
+        const aleyh = likOnce ? poz.likF : poz.stop;
+        const aleyhVur = L ? bar.l <= aleyh : bar.h >= aleyh;
+        if(aleyhVur){
+          if(likOnce){ notlar.add("En az bir pozisyon likit oldu — stop, likidasyonun gerisindeydi."); kapat("LİKİT", -(poz.marjin + girisFee), barKapanis); continue; }
+          kapat("STOP", -(poz.riskTutar + girisFee + poz.notional * FEE), barKapanis); continue;
+        }
+        const tp1Vur = L ? bar.h >= poz.tp1 : bar.l <= poz.tp1;
+        if(tp1Vur){
+          poz.faz = 3;
+          poz.banked = poz.riskTutar / 2 - (poz.notional / 2) * FEE;
+          const tp2Ayni = L ? bar.h >= poz.tp2 : bar.l <= poz.tp2;
+          if(tp2Ayni){
+            const kalan = (poz.notional / 2) * Math.abs(poz.tp2 - poz.giris) / poz.giris;
+            kapat("TP2", poz.banked + kalan - (poz.notional / 2) * FEE - girisFee, barKapanis); continue;
+          }
+        }
+      }
+      if(poz && poz.faz === 3){
+        const geriVur = L ? bar.l <= poz.giris : bar.h >= poz.giris;
+        if(geriVur){ kapat("TP1", poz.banked - (poz.notional / 2) * FEE - girisFee, barKapanis); continue; }
+        const tp2Vur = L ? bar.h >= poz.tp2 : bar.l <= poz.tp2;
+        if(tp2Vur){
+          const kalan = (poz.notional / 2) * Math.abs(poz.tp2 - poz.giris) / poz.giris;
+          kapat("TP2", poz.banked + kalan - (poz.notional / 2) * FEE - girisFee, barKapanis); continue;
+        }
+      }
+    }
+
+    // --- yeni sinyal ara (pozisyon yokken; son barda açılmaz) ---
+    if(!poz && i < mum.length - 1){
+      while(up < ust.length && ust[up].t + ustMin * 60000 <= barKapanis) up++;
+      const ustPencere = up >= 60 ? ust.slice(Math.max(0, up - 120), up) : null;
+      const r = motor(mum.slice(i - 109, i + 1), ustPencere, ayar.tf);
+      if((r.yon === "LONG" || r.yon === "SHORT") && r.sec && !r.sec.kosul){
+        const sn = mum[i + 1];
+        const giris = sn.o, L = r.yon === "LONG";
+        const stop = r.sec.stop, tp2 = r.sec.hedef;
+        const mesafe = L ? giris - stop : stop - giris;
+        const rrY = Math.abs(tp2 - giris) / Math.max(1e-9, mesafe);
+        if(mesafe > 0 && rrY >= 1.2){ // açılış kayması sonrası hâlâ mantıklıysa gir
+          let riskTutar = bak * ayar.riskYuzde / 100;
+          let notional = riskTutar / (mesafe / giris);
+          let marjin = notional / ayar.kald;
+          if(marjin > bak){
+            notional = bak * ayar.kald; marjin = bak;
+            riskTutar = notional * (mesafe / giris);
+            notlar.add("Bazı işlemlerde marjin yetmedi; pozisyon küçültüldü.");
+          }
+          if(notional >= 5){
+            poz = {
+              yon: r.yon, formasyon: r.sec.ad, giris, stop, tp2,
+              tp1: L ? giris + mesafe : giris - mesafe,
+              riskTutar, notional, marjin,
+              likF: L ? giris * (1 - 1 / ayar.kald) : giris * (1 + 1 / ayar.kald),
+              tGiris: sn.t, faz: 2, banked: 0
+            };
+          }
+        }
+      }
+    }
+  }
+
+  // gün sonu: açık pozisyonu son kapanıştan kapat
+  if(poz){
+    const son = mum[mum.length - 1];
+    const L = poz.yon === "LONG";
+    const kalanNot = poz.faz === 3 ? poz.notional / 2 : poz.notional;
+    const yonluF = (son.c - poz.giris) / poz.giris * (L ? 1 : -1);
+    const pnl = (poz.faz === 3 ? poz.banked : 0) + kalanNot * yonluF - kalanNot * FEE - poz.notional * FEE;
+    kapat("GÜN SONU", pnl, son.t + tfMin * 60000);
+  }
+  return {isler, egri, bakiye: bak, notlar: Array.from(notlar)};
+}
+
+function simSaat(ts, cokGun){
+  const d = new Date(ts);
+  const hm = String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+  return cokGun ? (d.getDate() + "." + (d.getMonth() + 1) + " " + hm) : hm;
+}
+function simPara(v){
+  const s = "$" + Math.abs(v).toFixed(2);
+  return (v >= 0 ? "+" : "−") + s;
+}
+
+async function simCalistir(){
+  if(S.mesgul) return;
+  const s = normalizeSembol();
+  if(!s){ hataGoster("Önce bir sembol yaz — örn: BTCUSDT"); return; }
+  $("sembolGiris").value = s;
+  const tf = seciliTf();
+  const gunBtn = document.querySelector("#simGunSatir .tf.aktif");
+  const gun = gunBtn ? +gunBtn.dataset.gun : 1;
+  const tfMin = TF_DAKIKA[tf] || 60;
+  const simBar = Math.round(gun * 1440 / tfMin);
+  if(simBar < 40){ hataGoster("Bu zaman diliminde " + gun + " gün çok kısa — süreyi artır veya daha küçük TF seç."); return; }
+  const bakiye0 = Math.max(10, +$("simBakiye").value || 100);
+  const yuzde = Math.min(5, Math.max(0.1, +$("rYuzde").value || 1));
+  const kald  = Math.min(50, Math.max(1, Math.round(+$("rKald").value || 5)));
+
+  S.mesgul = true;
+  $("btnSim").disabled = true;
+  $("simBolum").classList.add("gizli");
+  durumGoster(["Geçmiş mumlar indiriliyor...", "Motor bar bar çalıştırılıyor...", "Sanal işlemler yürütülüyor...", "Komisyonlar düşülüyor..."]);
+  try {
+    const toplam = Math.min(2600, simBar + 130);
+    const ustTf = UST_TF[tf] || "1d";
+    const ustToplam = Math.min(1000, Math.ceil(gun * 1440 / (TF_DAKIKA[ustTf] || 1440)) + 130);
+    const [mum, ust] = await Promise.all([klineCok(s, tf, toplam), klineCok(s, ustTf, ustToplam)]);
+    if(mum.length < 150) throw new Error("Bu sembolde yeterli geçmiş veri yok (" + mum.length + " mum)");
+    // uzun döngüde arayüzü kilitleme
+    await new Promise(res => setTimeout(res, 30));
+    const R = simMotoru(mum, ust, {bakiye: bakiye0, riskYuzde: yuzde, kald, tf});
+    durumGizle();
+    simSonucGoster(R, {sembol: s, tf, gun, bakiye0, yuzde, kald});
+  } catch(e){
+    hataGoster("Simülasyon başarısız: " + ((e && e.message) || "bilinmeyen hata"));
+  } finally {
+    S.mesgul = false;
+    $("btnSim").disabled = false;
+  }
+}
+$("btnSim").addEventListener("click", simCalistir);
+
+function simSonucGoster(R, meta){
+  const net = R.bakiye - meta.bakiye0;
+  const netY = net / meta.bakiye0 * 100;
+  const kapali = R.isler;
+  const kazanan = kapali.filter(x => x.pnl > 0).length;
+  const isabet = kapali.length ? Math.round(100 * kazanan / kapali.length) : null;
+  let tepe = meta.bakiye0, dd = 0;
+  for(const p of R.egri){ if(p.b > tepe) tepe = p.b; dd = Math.max(dd, (tepe - p.b) / tepe); }
+
+  const oz = $("simOzet");
+  oz.innerHTML = "";
+  [
+    ["$" + R.bakiye.toFixed(2), "Son bakiye"],
+    [(net >= 0 ? "+" : "−") + "$" + Math.abs(net).toFixed(2) + " · " + (netY >= 0 ? "+" : "") + netY.toFixed(1) + "%", "Net"],
+    [String(kapali.length), "İşlem"],
+    [isabet === null ? "—" : "%" + isabet, "İsabet"],
+    ["%" + (dd * 100).toFixed(1), "Maks. düşüş"]
+  ].forEach(cift => {
+    const div = document.createElement("div"); div.className = "ko";
+    const d1 = document.createElement("div"); d1.className = "kd"; d1.textContent = cift[0];
+    if(cift[1] === "Net") d1.style.color = net >= 0 ? "var(--long)" : "var(--short)";
+    const d2 = document.createElement("div"); d2.className = "kl"; d2.textContent = cift[1];
+    div.appendChild(d1); div.appendChild(d2); oz.appendChild(div);
+  });
+
+  // bakiye eğrisi
+  const cv = $("simGrafik");
+  const gw = cv.clientWidth || 320;
+  cv.width = gw * 2; cv.height = 140;
+  const g = cv.getContext("2d");
+  g.clearRect(0, 0, cv.width, cv.height);
+  if(R.egri.length > 1){
+    const t0 = R.egri[0].t, t1 = R.egri[R.egri.length - 1].t;
+    let bMin = Infinity, bMax = -Infinity;
+    R.egri.forEach(p => { bMin = Math.min(bMin, p.b); bMax = Math.max(bMax, p.b); });
+    const pay = (bMax - bMin) * 0.15 || 1; bMin -= pay; bMax += pay;
+    const X = t => 6 + (t - t0) / Math.max(1, t1 - t0) * (cv.width - 12);
+    const Y = b => 8 + (bMax - b) / (bMax - bMin) * (cv.height - 16);
+    g.strokeStyle = "#B6BAC6"; g.setLineDash([5, 6]); g.lineWidth = 2;
+    g.beginPath(); g.moveTo(6, Y(meta.bakiye0)); g.lineTo(cv.width - 6, Y(meta.bakiye0)); g.stroke();
+    g.setLineDash([]);
+    g.strokeStyle = net >= 0 ? "#0E9F6E" : "#E02424"; g.lineWidth = 3.5;
+    g.lineJoin = "round";
+    g.beginPath();
+    R.egri.forEach((p, idx) => { const x = X(p.t), y = Y(p.b); idx ? g.lineTo(x, y) : g.moveTo(x, y); });
+    g.stroke();
+  }
+
+  // tablo
+  const tb = $("simTablo");
+  tb.innerHTML = "";
+  const thead = document.createElement("thead");
+  const trh = document.createElement("tr");
+  ["Saat", "Yön", "Formasyon", "Giriş", "Sonuç", "PnL", "Bakiye"].forEach(b => {
+    const th = document.createElement("th"); th.textContent = b; trh.appendChild(th);
+  });
+  thead.appendChild(trh); tb.appendChild(thead);
+  const tbody = document.createElement("tbody");
+  const SONUC_ET = {"STOP": "🛑 Stop", "TP1": "🥈 TP1", "TP2": "🎯 TP2", "LİKİT": "💀 Likit", "GÜN SONU": "⏹ Gün sonu"};
+  if(!R.isler.length){
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
+    td.colSpan = 7; td.style.fontFamily = "inherit";
+    td.textContent = "Motor bu dönemde işleme değer kurulum görmedi — bu da bir sonuçtur (BEKLE disiplini).";
+    tr.appendChild(td); tbody.appendChild(tr);
+  }
+  R.isler.forEach(x => {
+    const tr = document.createElement("tr");
+    const hcr = [
+      simSaat(x.t, meta.gun > 1),
+      x.yon,
+      x.formasyon.length > 20 ? x.formasyon.slice(0, 19) + "…" : x.formasyon,
+      fmtF(x.giris),
+      SONUC_ET[x.sonuc] || x.sonuc,
+      simPara(x.pnl),
+      "$" + x.bakiye.toFixed(2)
+    ];
+    hcr.forEach((v, ci) => {
+      const td = document.createElement("td");
+      td.textContent = v;
+      if(ci === 1) td.className = x.yon === "LONG" ? "st-long" : "st-short";
+      if(ci === 5) td.className = x.pnl >= 0 ? "st-art" : "st-eks";
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+  tb.appendChild(tbody);
+
+  const notlar = (R.notlar || []).join(" ");
+  $("simNot").textContent =
+    meta.sembol + " · " + (TF_ETIKET[meta.tf] || meta.tf) + " · son " + meta.gun + " gün · %" + meta.yuzde + " risk · " + meta.kald + "x kaldıraç · komisyon %0.05/yön dahil. " +
+    "Varsayımlar: giriş bir sonraki bar açılışı, aynı mumda çift tetikte temkinli sayım (önce stop), koşullu sinyaller atlanır, funding hariç. " +
+    (notlar ? notlar + " " : "") +
+    "Geçmiş sonuç geleceği garanti etmez — bu tablo motorun karnesidir, kehanet değil.";
+
+  $("simBolum").classList.remove("gizli");
+  $("simBolum").scrollIntoView({behavior: azHareket ? "auto" : "smooth", block: "start"});
+}
+
 /* ---------- AI yorum katmanı (opsiyonel, engellemez) ---------- */
 async function aiYorumGetir(m, sembol, tf){
   const p = "Kripto teknik analiz asistanısın. Aşağıdaki hazır verilerle Türkçe, abartısız, en fazla 2 cümlelik bir yorum yaz. " +
@@ -1790,8 +2104,8 @@ async function metinKaskadi(p){
     const sSem = localStorage.getItem("fa_sembol");
     if(sSem) $("sembolGiris").value = sSem;
     const sTf = localStorage.getItem("fa_tf");
-    if(sTf && document.querySelector('.tf[data-tf="' + sTf + '"]')){
-      document.querySelectorAll(".tf").forEach(x => x.classList.toggle("aktif", x.dataset.tf === sTf));
+    if(sTf && document.querySelector('#tfSatir .tf[data-tf="' + sTf + '"]')){
+      document.querySelectorAll("#tfSatir .tf").forEach(x => x.classList.toggle("aktif", x.dataset.tf === sTf));
     }
   } catch(e){}
   modAyarla("canli");
