@@ -435,8 +435,8 @@ footer .uyari{
         <div class="risk-alan"><label for="botBakiye">Bakiye ($)</label><input id="botBakiye" type="number" inputmode="decimal" value="100" min="10"></div>
         <div class="risk-alan"><label>Bot TF</label>
           <div class="tf-satir" id="botTfSatir" style="margin-top:0">
-            <button class="tf aktif" data-tf="5m" type="button">5D</button>
-            <button class="tf" data-tf="15m" type="button">15D</button>
+            <button class="tf" data-tf="5m" type="button">5D</button>
+            <button class="tf aktif" data-tf="15m" type="button">15D</button>
           </div>
         </div>
       </div>
@@ -452,7 +452,7 @@ footer .uyari{
         <button class="btn btn-cizgi gizli" id="btnBotDurdur" type="button" style="flex:1">⏹ Günü kapat</button>
         <button class="btn btn-cizgi" id="btnBotSifirla" type="button">🗑</button>
       </div>
-      <div class="sim-not" id="botDurum">Bot kapalı. Başlatınca 24s hacim liderlerini tarar, sinyal bulunca sanal pozisyon açar. Sayfa açıkken çalışır; kapatıp dönersen kaldığı yerden devralır.</div>
+      <div class="sim-not" id="botDurum" style="white-space:pre-line">Bot kapalı. Başlatınca 24s hacim liderlerini tarar, sinyal bulunca sanal pozisyon açar. Sayfa açıkken çalışır; kapatıp dönersen kaldığı yerden devralır.</div>
     </div>
     <div class="karne gizli" id="botSonuc" style="margin-top:14px">
       <div class="not-baslik">Bot Karnesi 🤖</div>
@@ -1447,7 +1447,7 @@ function motor(gor, ustMum, tf){
     aksiyon = "İşleme girme: " + sebepler.join(" · ") + ".";
   }
 
-  return {yon, guven, sec, ciz, analiz, aksiyon, ustTrend, uyum, yerelTrend, rsiS, hacimOnay};
+  return {yon, guven, sec, ciz, analiz, aksiyon, ustTrend, uyum, yerelTrend, rsiS, hacimOnay, atrOran: atrS / fiyat};
 }
 
 /* ---------- Binance verisi ---------- */
@@ -2097,10 +2097,30 @@ function simSonucGoster(R, meta){
    🤖 CANLI BOT (sanal) — coin'i kendi seçer, kaldıracı kendi ayarlar
    ================================================================== */
 const BOT_MODLAR = {
-  temkinli: {risk: 1,   maxPoz: 1, kaldTavan: 5,  ad: "Temkinli"},
-  dengeli:  {risk: 2.5, maxPoz: 2, kaldTavan: 10, ad: "Dengeli"},
-  cesur:    {risk: 4,   maxPoz: 3, kaldTavan: 20, ad: "Cesur"}
+  temkinli: {risk: 1,   maxPoz: 1, kaldTavan: 5,  guvenEsik: 75, gunFren: 6,  ayniYon: 1, ad: "Temkinli"},
+  dengeli:  {risk: 2.5, maxPoz: 2, kaldTavan: 10, guvenEsik: 70, gunFren: 8,  ayniYon: 2, ad: "Dengeli"},
+  cesur:    {risk: 4,   maxPoz: 3, kaldTavan: 20, guvenEsik: 65, gunFren: 12, ayniYon: 2, ad: "Cesur"}
 };
+/* Ölü piyasa tabanı: ATR/fiyat bunun altındaysa hareket yok, komisyon kazanır */
+const VOL_TABAN = {"5m": 0.0012, "15m": 0.002, "1h": 0.003};
+/* Gidiş-dönüş komisyonun 1R içindeki payı bu eşiği aşarsa işlem alınmaz */
+const FEE_PAY_TAVAN = 0.12;
+
+/* Saf giriş filtresi — test edilebilir. aday:{guven,uyum,atrOran,mesafe}
+   durum:{ayniYonSayi,acikRisk,bakiye,frenAktif,molaAktif}  →  {gec, sebep} */
+function botGirisFiltre(aday, durum, modu, tf){
+  if(durum.frenAktif) return {gec: false, sebep: "fren"};
+  if(durum.molaAktif) return {gec: false, sebep: "mola"};
+  if(aday.guven < modu.guvenEsik) return {gec: false, sebep: "guven"};
+  if(aday.uyum !== true) return {gec: false, sebep: "uyum"};
+  if((aday.atrOran || 0) < (VOL_TABAN[tf] || 0)) return {gec: false, sebep: "vol"};
+  if(!(aday.mesafe > 0)) return {gec: false, sebep: "mesafe"};
+  if((2 * BOT_FEE) / aday.mesafe > FEE_PAY_TAVAN) return {gec: false, sebep: "fee"};
+  if(durum.ayniYonSayi >= (modu.ayniYon || modu.maxPoz)) return {gec: false, sebep: "yon"};
+  const riskTutar = durum.bakiye * modu.risk / 100;
+  if(durum.acikRisk + riskTutar > durum.bakiye * modu.risk * 2 / 100) return {gec: false, sebep: "risk"};
+  return {gec: true, sebep: null};
+}
 const BOT_FEE = 0.0005;
 const STABIL = /^(USDC|FDUSD|TUSD|BUSD|DAI|USDP|EUR|EURI|AEUR|XUSD|USD1|PAXG)$/;
 let botZamanlayici = null, botFiyatSayac = null, botMesgul = false;
@@ -2247,23 +2267,41 @@ async function botTik(){
       } catch(e){ /* tek sembol hatası taramayı durdurmasın */ }
     }
 
-    // en iyi adaylarla boş yuvaları doldur
+    // --- disiplin durumu: günlük fren + seri kayıp molası ---
+    const bugun = new Date(simdi).toDateString();
+    if(B.gunTarih !== bugun){ B.gunTarih = bugun; B.gunBasBakiye = B.bakiye; }
+    const frenAktif = B.bakiye <= (B.gunBasBakiye || B.bakiye0) * (1 - modu.gunFren / 100);
+    const son3 = B.isler.slice(0, 3);
+    const molaAktif = son3.length === 3
+      && son3.every(x => x.sonuc === "STOP" || x.sonuc === "LİKİT")
+      && (simdi - son3[0].tC) < 2 * 3600 * 1000;
+
+    // en iyi adaylarla boş yuvaları doldur (profesyonel süzgeç setiyle)
     adaylar.sort((a, b) => (b.r.guven - a.r.guven) || ((b.r.sec.rr || 0) - (a.r.sec.rr || 0)));
+    const ist = {sinyal: adaylar.length, alinan: 0, red: {}};
+    const say = s => { ist.red[s] = (ist.red[s] || 0) + 1; };
     for(const a of adaylar){
       if(B.pozlar.length >= modu.maxPoz) break;
       if(B.pozlar.some(p => p.sembol === a.sembol)) continue;
       const sec = a.r.sec, giris = sec.giris;
       const mesafe = Math.abs(giris - sec.stop) / giris;
-      if(!(mesafe > 0)) continue;
+      const suzgec = botGirisFiltre(
+        {guven: a.r.guven, uyum: a.r.uyum, atrOran: a.r.atrOran, mesafe},
+        {ayniYonSayi: B.pozlar.filter(p => p.yon === a.r.yon).length,
+         acikRisk: B.pozlar.reduce((s, p) => s + p.riskTutar, 0),
+         bakiye: B.bakiye, frenAktif, molaAktif},
+        modu, B.tf
+      );
+      if(!suzgec.gec){ say(suzgec.sebep); continue; }
       const marjKullanim = B.pozlar.reduce((s, p) => s + p.marjin, 0);
       const serbest = B.bakiye - marjKullanim;
-      if(serbest < 5) break;
+      if(serbest < 5){ say("marjin"); break; }
       let riskTutar = B.bakiye * modu.risk / 100;
       let notional = riskTutar / mesafe;
       const K = botKaldirac(mesafe, notional, serbest, modu.kaldTavan);
       notional = K.notional;
       riskTutar = notional * mesafe;
-      if(notional < 5) continue;
+      if(notional < 5){ say("marjin"); continue; }
       const L = a.r.yon === "LONG";
       B.pozlar.push({
         sembol: a.sembol, yon: a.r.yon, formasyon: sec.ad,
@@ -2273,8 +2311,17 @@ async function botTik(){
         likF: L ? giris * (1 - 1 / K.kald) : giris * (1 + 1 / K.kald),
         faz: 2, banked: 0, tGiris: simdi, sonMumT: a.sonT, guven: a.r.guven
       });
+      ist.alinan++;
       if(K.kucultuldu) B.notlar = Array.from(new Set((B.notlar || []).concat(["Serbest marjin sınırında bazı pozisyonlar küçültüldü."])));
     }
+
+    // tarama özeti (şeffaflık: neden az işlem açtığını görürsün)
+    const REDAD = {guven: "güven barajı", uyum: "üst TF uyumsuz", vol: "ölü piyasa", fee: "komisyon payı", yon: "yön limiti", risk: "risk tavanı", fren: "günlük fren", mola: "kayıp molası", mesafe: "geçersiz stop", marjin: "marjin"};
+    const redler = Object.keys(ist.red).map(k => ist.red[k] + " " + (REDAD[k] || k));
+    B.sonOzet = taranacak.length + " coin · " + ist.sinyal + " sinyal · " + ist.alinan + " alındı"
+      + (redler.length ? " · elendi: " + redler.join(", ") : "")
+      + (frenAktif ? " · 🔒 günlük fren aktif" : "")
+      + (molaAktif ? " · ⏸ 3 stop üst üste, mola" : "");
 
     B.sonTik = simdi;
     botDurumYaz(B);
@@ -2472,18 +2519,20 @@ function botCiz(B, fiyatlar){
 
   const modu = BOT_MODLAR[B.modu] || BOT_MODLAR.dengeli;
   $("botNot").textContent =
-    modu.ad + " mod · %" + modu.risk + " risk/işlem · en çok " + modu.maxPoz + " pozisyon · kaldıraç stop mesafesine göre otomatik (tavan " + modu.kaldTavan + "x) · " +
-    (TF_ETIKET[B.tf] || B.tf) + " mumları · " + (B.izlenen ? B.izlenen.length : 0) + " coin taranıyor · komisyon %0.05/yön. " +
-    "Kararlar yalnız kapanan mumlarla alınır; sayfa kapalıyken yeni işlem açılmaz, dönünce açık pozisyonlar mum geçmişiyle devralınır. " +
+    modu.ad + " mod · %" + modu.risk + " risk/işlem · en çok " + modu.maxPoz + " poz (aynı yönde " + (modu.ayniYon || modu.maxPoz) + ") · kaldıraç stopa göre otomatik (tavan " + modu.kaldTavan + "x) · " +
+    (TF_ETIKET[B.tf] || B.tf) + " · " + (B.izlenen ? B.izlenen.length : 0) + " coin · komisyon %0.05/yön dahil. " +
+    "Disiplin seti: güven ≥ " + modu.guvenEsik + ", üst TF trend uyumu zorunlu, ölü piyasa filtresi, komisyon payı ≤ %12/R, toplam risk tavanı, günlük −%" + modu.gunFren + " freni, 3 stop üst üste → 2 sa mola. " +
+    "Kararlar yalnız kapanan mumlarla; sayfa kapalıyken yeni işlem açılmaz, dönünce pozisyonlar mum geçmişiyle devralınır. " +
     ((B.notlar || []).join(" ") + " ") +
-    "Sanal paradır; kâr garantisi yoktur.";
+    "Bu set kanamayı azaltır ama kenar (edge) yaratmaz — kâr garantisi yoktur; karne hakemdir.";
 
   // durum satırı
   if(B.aktif){
     const tfMs = (TF_DAKIKA[B.tf] || 5) * 60000;
     const sonraki = Math.ceil(Date.now() / tfMs) * tfMs + 5000;
-    $("botDurum").textContent = "🟢 Bot çalışıyor · " + (B.izlenen ? B.izlenen.length : 0) + " coin · açık poz " + B.pozlar.length + "/" + modu.maxPoz +
-      " · sonraki tarama " + Math.max(0, Math.round((sonraki - Date.now()) / 1000)) + " sn · oturum " + zamanFarki(B.basTs);
+    $("botDurum").textContent = "🟢 Bot çalışıyor · açık poz " + B.pozlar.length + "/" + modu.maxPoz +
+      " · sonraki tarama " + Math.max(0, Math.round((sonraki - Date.now()) / 1000)) + " sn · oturum " + zamanFarki(B.basTs) +
+      (B.sonOzet ? "\n" + B.sonOzet : "");
   }
 }
 
